@@ -5,6 +5,8 @@ import { archiveDishAction, restoreDishAction } from "../actions";
 import { DishDetailsScreen } from "@/components/screens/dish-details-screen";
 import { SetupState } from "@/components/ui/setup-state";
 import { fetchDishWithIngredients } from "@/lib/dish-crud";
+import { getRequestLocale } from "@/lib/i18n/server";
+import { getTranslation } from "@/lib/i18n/translate";
 import { parseDishLibraryMode } from "@/lib/dishes";
 import { getSupabaseConfigurationError } from "@/lib/supabase/server";
 
@@ -17,14 +19,17 @@ export default async function DishDetailsPage({
   params: Promise<{ dishId: string }>;
   searchParams?: Promise<{ mode?: string }>;
 }) {
+  const locale = await getRequestLocale();
   const configurationError = getSupabaseConfigurationError();
 
   if (configurationError) {
     return (
       <SetupState
-        title="Supabase is not configured"
-        description="Dish details cannot load until local Supabase variables are configured."
-        hint={`${configurationError}. Fill in .env.local from .env.example and restart npm.cmd run dev.`}
+        title={getTranslation(locale, "dishes.setup.title")}
+        description={getTranslation(locale, "dishes.setup.detailsDescription")}
+        hint={getTranslation(locale, "dishes.setup.hint")}
+        badgeLabel={getTranslation(locale, "navigation.badges.dishLibrary")}
+        ctaLabel={getTranslation(locale, "dishes.navigation.backToLibrary")}
       />
     );
   }

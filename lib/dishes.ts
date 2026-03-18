@@ -37,7 +37,7 @@ export function getDishLibraryHref(mode: DishLibraryMode = "active") {
 }
 
 function stripRecipeLinePrefix(line: string) {
-  return line.replace(/^((\d+[\).\:-]?)|[-*•])\s+/, "").trim();
+  return line.replace(/^((\d+[\).\:-]?)|[-*\u2022])\s+/, "").trim();
 }
 
 function getRecipeSummaryLine(recipeText?: string | null) {

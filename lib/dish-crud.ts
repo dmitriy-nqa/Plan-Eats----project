@@ -7,7 +7,7 @@ import {
   type DishLibraryMode,
   type DishSummary,
 } from "@/lib/dishes";
-import type { AppLocale } from "@/lib/i18n/config";
+import type { AppLocale, TranslationKey } from "@/lib/i18n/config";
 import { getTranslation } from "@/lib/i18n/translate";
 import { getCurrentFamilyId, getSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -70,13 +70,17 @@ function normalizeIngredientsForWrite(values: DishFormValues) {
     .filter((ingredient): ingredient is NonNullable<typeof ingredient> => ingredient !== null);
 }
 
-export async function fetchActiveDishes(locale: AppLocale = "en") {
-  return fetchDishesByMode("active", locale);
+export async function fetchActiveDishes(
+  locale: AppLocale = "en",
+  summaryPlaceholderKey: TranslationKey = "weeklyMenu.picker.summaryFallback",
+) {
+  return fetchDishesByMode("active", locale, summaryPlaceholderKey);
 }
 
 export async function fetchDishesByMode(
   mode: DishLibraryMode,
   locale: AppLocale = "en",
+  summaryPlaceholderKey: TranslationKey = "dishes.summary.fallback",
 ) {
   const supabase = getSupabaseServerClient();
   const familyId = getCurrentFamilyId();
@@ -99,7 +103,7 @@ export async function fetchDishesByMode(
     summary: getDishDerivedSummary({
       comment: dish.comment,
       recipeText: dish.recipe_text,
-      placeholder: getTranslation(locale, "weeklyMenu.picker.summaryFallback"),
+      placeholder: getTranslation(locale, summaryPlaceholderKey),
     }),
   })) satisfies DishSummary[];
 }

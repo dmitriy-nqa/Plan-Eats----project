@@ -35,7 +35,7 @@ async function WeeklyMenuPageContent() {
         dishes={[]}
         assignAction={assignWeeklySlotAction}
         clearAction={clearWeeklySlotAction}
-        errorMessage={`${configurationError}. ${getTranslation(locale, "weeklyMenu.errors.configurationHelp")}`}
+        errorMessage={getTranslation(locale, "weeklyMenu.errors.configurationHelp")}
       />
     );
   }
@@ -43,7 +43,7 @@ async function WeeklyMenuPageContent() {
   try {
     const [menu, dishes] = await Promise.all([
       fetchCurrentWeekMenu(locale),
-      fetchActiveDishes(locale),
+      fetchActiveDishes(locale, "weeklyMenu.picker.summaryFallback"),
     ]);
 
     return (

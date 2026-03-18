@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import type { DishDetails } from "@/lib/dish-crud";
+import { useLocale, useT } from "@/lib/i18n/provider";
 import {
   getDishCategoryLabel,
   getDishLibraryHref,
@@ -35,9 +36,15 @@ function Section({
   );
 }
 
-function IngredientsList({ ingredients }: { ingredients: DishDetails["ingredients"] }) {
+function IngredientsList({
+  ingredients,
+  emptyText,
+}: {
+  ingredients: DishDetails["ingredients"];
+  emptyText: string;
+}) {
   if (ingredients.length === 0) {
-    return <p>No ingredients were added for this dish yet.</p>;
+    return <p>{emptyText}</p>;
   }
 
   return (
@@ -74,7 +81,7 @@ function getStructuredRecipeSteps(recipeText: string) {
   }
 
   const markedLines = lines.map((line) => {
-    const match = line.match(/^((\d+[\).\:-]?)|[-*•])\s+(.*)$/);
+    const match = line.match(/^((\d+[\).\:-]?)|[-*\u2022])\s+(.*)$/);
 
     if (!match) {
       return null;
@@ -90,11 +97,17 @@ function getStructuredRecipeSteps(recipeText: string) {
   return markedLines as string[];
 }
 
-function RecipeContent({ recipeText }: { recipeText: string }) {
+function RecipeContent({
+  recipeText,
+  emptyText,
+}: {
+  recipeText: string;
+  emptyText: string;
+}) {
   const normalizedText = recipeText.trim();
 
   if (!normalizedText) {
-    return <p>No cooking steps were added for this dish yet.</p>;
+    return <p>{emptyText}</p>;
   }
 
   const structuredSteps = getStructuredRecipeSteps(normalizedText);
@@ -126,11 +139,11 @@ function RecipeContent({ recipeText }: { recipeText: string }) {
   );
 }
 
-function NotesContent({ notes }: { notes: string }) {
+function NotesContent({ notes, emptyText }: { notes: string; emptyText: string }) {
   const normalizedNotes = notes.trim();
 
   if (!normalizedNotes) {
-    return <p>No notes were added for this dish yet.</p>;
+    return <p>{emptyText}</p>;
   }
 
   return (
@@ -153,6 +166,7 @@ function DishPrimaryActions({
   archiveAction: (formData: FormData) => Promise<void>;
   restoreAction: (formData: FormData) => Promise<void>;
 }) {
+  const t = useT();
   const editHref = `/dishes/${dishId}/edit?mode=${mode}`;
 
   return (
@@ -161,7 +175,7 @@ function DishPrimaryActions({
         href={editHref}
         className="rounded-2xl bg-clay px-4 py-3 text-center text-sm font-semibold text-white shadow-sm"
       >
-        Edit
+        {t("common.actions.edit")}
       </Link>
 
       <form action={isArchived ? restoreAction : archiveAction}>
@@ -175,7 +189,7 @@ function DishPrimaryActions({
               : "border-clay/25 bg-white/80 text-clay",
           ].join(" ")}
         >
-          {isArchived ? "Restore" : "Archive"}
+          {isArchived ? t("common.actions.restore") : t("common.actions.archive")}
         </button>
       </form>
     </div>
@@ -193,6 +207,9 @@ export function DishDetailsScreen({
   archiveAction: (formData: FormData) => Promise<void>;
   restoreAction: (formData: FormData) => Promise<void>;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 text-sm font-semibold text-cocoa">
@@ -200,17 +217,17 @@ export function DishDetailsScreen({
           href={getDishLibraryHref(mode)}
           className="rounded-full bg-white/90 px-3 py-2 shadow-sm"
         >
-          Back to Dish Library
+          {t("dishes.navigation.backToLibrary")}
         </Link>
       </div>
 
       <ScreenHeader
-        eyebrow="Dish Details"
+        eyebrow={t("dishes.details.header.eyebrow")}
         title={dish.name}
         description={
           dish.isArchived
-            ? "This dish lives in Archived for now. You can still read it, edit it, and restore it when it belongs back in the active family library."
-            : "A calm reading view for the family dish, so cooking details stay easy to revisit before editing."
+            ? t("dishes.details.header.archivedDescription")
+            : t("dishes.details.header.activeDescription")
         }
       />
 
@@ -218,17 +235,21 @@ export function DishDetailsScreen({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap gap-2">
-              <MetadataBadge>{getDishCategoryLabel(dish.category)}</MetadataBadge>
-              {dish.isArchived ? <MetadataBadge>Archived dish</MetadataBadge> : null}
+              <MetadataBadge>{getDishCategoryLabel(dish.category, locale)}</MetadataBadge>
+              {dish.isArchived ? (
+                <MetadataBadge>{t("dishes.details.archivedBadge")}</MetadataBadge>
+              ) : null}
             </div>
           </div>
         </div>
 
         {dish.isArchived ? (
           <div className="rounded-[1.25rem] border border-leaf/15 bg-white/70 px-4 py-3">
-            <p className="text-sm font-semibold text-ink">Archived dishes stay safe here</p>
+            <p className="text-sm font-semibold text-ink">
+              {t("dishes.details.archivedNotice.title")}
+            </p>
             <p className="mt-1 text-sm leading-6 text-cocoa">
-              Restoring this dish will place it back in the Active Dish Library.
+              {t("dishes.details.archivedNotice.description")}
             </p>
           </div>
         ) : null}
@@ -242,16 +263,25 @@ export function DishDetailsScreen({
         />
       </SurfaceCard>
 
-      <Section title="Ingredients">
-        <IngredientsList ingredients={dish.ingredients} />
+      <Section title={t("dishes.details.sections.ingredients")}>
+        <IngredientsList
+          ingredients={dish.ingredients}
+          emptyText={t("dishes.details.empty.ingredients")}
+        />
       </Section>
 
-      <Section title="Cooking steps">
-        <RecipeContent recipeText={dish.recipeText} />
+      <Section title={t("dishes.details.sections.cookingSteps")}>
+        <RecipeContent
+          recipeText={dish.recipeText}
+          emptyText={t("dishes.details.empty.cookingSteps")}
+        />
       </Section>
 
-      <Section title="Notes">
-        <NotesContent notes={dish.comment} />
+      <Section title={t("dishes.details.sections.notes")}>
+        <NotesContent
+          notes={dish.comment}
+          emptyText={t("dishes.details.empty.notes")}
+        />
       </Section>
     </div>
   );

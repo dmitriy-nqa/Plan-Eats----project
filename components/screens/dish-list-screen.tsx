@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useState } from "react";
 
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
+import { useLocale, useT } from "@/lib/i18n/provider";
 import {
   dishCategoryValues,
   getDishCategoryLabel,
@@ -85,21 +86,27 @@ function writeCollapsedSections(
 function SearchField({
   value,
   onChange,
+  label,
+  placeholder,
+  badgeLabel,
 }: {
   value: string;
   onChange: (value: string) => void;
+  label: string;
+  placeholder: string;
+  badgeLabel: string;
 }) {
   return (
     <label className="block">
-      <span className="sr-only">Search dishes</span>
+      <span className="sr-only">{label}</span>
       <div className="flex items-center gap-3 rounded-[1.35rem] border border-white/80 bg-white/92 px-4 py-3 shadow-sm">
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sand text-xs font-bold text-cocoa">
-          S
+          {badgeLabel}
         </span>
         <input
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder="Search dishes"
+          placeholder={placeholder}
           className="w-full border-none bg-transparent text-sm text-ink outline-none placeholder:text-cocoa/60"
         />
       </div>
@@ -108,6 +115,8 @@ function SearchField({
 }
 
 function ModeSwitch({ mode }: { mode: DishLibraryMode }) {
+  const t = useT();
+
   return (
     <div className="inline-flex rounded-[1.2rem] border border-white/80 bg-sand/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
       {(["active", "archived"] as const).map((option) => {
@@ -125,7 +134,9 @@ function ModeSwitch({ mode }: { mode: DishLibraryMode }) {
                 : "text-cocoa/85 hover:bg-white/60 hover:text-ink",
             ].join(" ")}
           >
-            {option === "active" ? "Active" : "Archived"}
+            {option === "active"
+              ? t("dishes.mode.active")
+              : t("dishes.mode.archived")}
           </Link>
         );
       })}
@@ -133,7 +144,15 @@ function ModeSwitch({ mode }: { mode: DishLibraryMode }) {
   );
 }
 
-function DishCard({ dish, mode }: { dish: DishSummary; mode: DishLibraryMode }) {
+function DishCard({
+  dish,
+  mode,
+  locale,
+}: {
+  dish: DishSummary;
+  mode: DishLibraryMode;
+  locale: "ru" | "en";
+}) {
   const isArchivedMode = mode === "archived";
 
   return (
@@ -156,7 +175,7 @@ function DishCard({ dish, mode }: { dish: DishSummary; mode: DishLibraryMode }) 
                 isArchivedMode ? "text-cocoa/75" : "text-clay",
               ].join(" ")}
             >
-              {getDishCategoryLabel(dish.category)}
+              {getDishCategoryLabel(dish.category, locale)}
             </p>
           </div>
 
@@ -250,22 +269,23 @@ function EmptyDishState({
   mode: DishLibraryMode;
   isSearchEmpty: boolean;
 }) {
+  const t = useT();
   const title = isSearchEmpty
-    ? "No dishes match this search"
+    ? t("dishes.library.empty.search.title")
     : mode === "active"
-      ? "Your Dish Library is still empty"
-      : "Archived dishes will appear here";
+      ? t("dishes.library.empty.active.title")
+      : t("dishes.library.empty.archived.title");
   const description = isSearchEmpty
-    ? "Try a different word or clear the search field to browse the library again."
+    ? t("dishes.library.empty.search.description")
     : mode === "active"
-      ? "Start with a few family dishes so weekly planning becomes faster and the library feels useful right away."
-      : "When you archive a dish, it leaves the active library and stays here until you decide to restore it.";
+      ? t("dishes.library.empty.active.description")
+      : t("dishes.library.empty.archived.description");
 
   return (
     <SurfaceCard className="overflow-hidden bg-gradient-to-br from-white via-cream to-almond p-0">
       <div className="px-5 py-6">
         <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blush text-sm font-bold text-ink">
-          DL
+          {t("navigation.badges.dishLibrary")}
         </div>
         <h2 className="mt-4 font-[var(--font-heading)] text-3xl font-semibold text-ink">
           {title}
@@ -276,7 +296,7 @@ function EmptyDishState({
             href="/dishes/new"
             className="mt-5 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
           >
-            Add dish
+            {t("dishes.actions.addDish")}
           </Link>
         ) : null}
       </div>
@@ -284,7 +304,10 @@ function EmptyDishState({
   );
 }
 
-function groupDishesByCategory(dishes: DishSummary[]) {
+function groupDishesByCategory(
+  dishes: DishSummary[],
+  locale: "ru" | "en",
+) {
   return dishCategoryValues.reduce<DishLibrarySection[]>((sections, category) => {
     const categoryDishes = dishes.filter((dish) => dish.category === category);
 
@@ -294,7 +317,7 @@ function groupDishesByCategory(dishes: DishSummary[]) {
 
     sections.push({
       category,
-      label: getDishCategoryLabel(category),
+      label: getDishCategoryLabel(category, locale),
       dishes: categoryDishes,
     });
 
@@ -311,6 +334,8 @@ export function DishListScreen({
   mode: DishLibraryMode;
   errorMessage?: string;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
   const [query, setQuery] = useState("");
   const [collapsedSections, setCollapsedSections] = useState<
     Partial<Record<DishCategory, boolean>>
@@ -336,10 +361,11 @@ export function DishListScreen({
       return true;
     }
 
-    return [dish.name, dish.summary]
-      .some((value) => value.toLowerCase().includes(normalizedQuery));
+    return [dish.name, dish.summary].some((value) =>
+      value.toLowerCase().includes(normalizedQuery),
+    );
   });
-  const sections = groupDishesByCategory(filteredDishes);
+  const sections = groupDishesByCategory(filteredDishes, locale);
   const hasDishes = initialDishes.length > 0;
   const hasResults = sections.length > 0;
   const hasSearchQuery = normalizedQuery.length > 0;
@@ -358,9 +384,9 @@ export function DishListScreen({
   return (
     <div className="space-y-4">
       <ScreenHeader
-        eyebrow="Family Recipes"
-        title="Dish Library"
-        description="Browse the family recipe library by category, open a dish to read it in full, and keep active and archived dishes easy to understand."
+        eyebrow={t("dishes.library.header.eyebrow")}
+        title={t("dishes.library.header.title")}
+        description={t("dishes.library.header.description")}
       />
 
       <section className="rounded-[1.75rem] border border-white/80 bg-gradient-to-br from-white via-cream to-almond px-4 py-4 shadow-card">
@@ -369,14 +395,14 @@ export function DishListScreen({
             <div className="flex items-center gap-3">
               <ModeSwitch mode={mode} />
               <span className="rounded-full bg-white/85 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
-                {initialDishes.length} dishes
+                {t("dishes.library.count", { count: initialDishes.length })}
               </span>
             </div>
 
             <p className="max-w-[34ch] text-sm leading-6 text-cocoa">
               {mode === "active"
-                ? "Active dishes are ready for planning and cooking."
-                : "Archived dishes stay available for reading, editing, and restoring when you need them again."}
+                ? t("dishes.library.activeDescription")
+                : t("dishes.library.archivedDescription")}
             </p>
           </div>
 
@@ -384,18 +410,26 @@ export function DishListScreen({
             href="/dishes/new"
             className="inline-flex rounded-[1.2rem] bg-clay px-4 py-3 text-sm font-semibold text-white shadow-sm"
           >
-            Add dish
+            {t("dishes.actions.addDish")}
           </Link>
         </div>
 
         <div className="mt-4">
-          <SearchField value={query} onChange={setQuery} />
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            label={t("dishes.search.label")}
+            placeholder={t("dishes.search.placeholder")}
+            badgeLabel={t("common.badges.search")}
+          />
         </div>
       </section>
 
       {errorMessage ? (
         <SurfaceCard className="border-clay/20 bg-white/90">
-          <p className="text-sm font-semibold text-ink">Could not load Dish Library</p>
+          <p className="text-sm font-semibold text-ink">
+            {t("dishes.library.errorTitle")}
+          </p>
           <p className="mt-2 text-sm leading-6 text-cocoa">{errorMessage}</p>
         </SurfaceCard>
       ) : null}
@@ -428,7 +462,12 @@ export function DishListScreen({
                 {isExpanded ? (
                   <div className="space-y-2">
                     {section.dishes.map((dish) => (
-                      <DishCard key={dish.id} dish={dish} mode={mode} />
+                      <DishCard
+                        key={dish.id}
+                        dish={dish}
+                        mode={mode}
+                        locale={locale}
+                      />
                     ))}
                   </div>
                 ) : null}

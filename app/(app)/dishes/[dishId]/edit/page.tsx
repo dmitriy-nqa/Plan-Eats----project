@@ -6,6 +6,8 @@ import { DishFormScreen } from "@/components/screens/dish-form-screen";
 import { SetupState } from "@/components/ui/setup-state";
 import { createEmptyIngredient } from "@/lib/dish-form";
 import { fetchDishWithIngredients } from "@/lib/dish-crud";
+import { getRequestLocale } from "@/lib/i18n/server";
+import { getTranslation } from "@/lib/i18n/translate";
 import { parseDishLibraryMode } from "@/lib/dishes";
 import { getSupabaseConfigurationError } from "@/lib/supabase/server";
 
@@ -18,14 +20,17 @@ export default async function EditDishPage({
   params: Promise<{ dishId: string }>;
   searchParams?: Promise<{ mode?: string }>;
 }) {
+  const locale = await getRequestLocale();
   const configurationError = getSupabaseConfigurationError();
 
   if (configurationError) {
     return (
       <SetupState
-        title="Supabase is not configured"
-        description="The Edit Dish form cannot load or save data until local Supabase variables are configured."
-        hint={`${configurationError}. Fill in .env.local from .env.example and restart npm.cmd run dev.`}
+        title={getTranslation(locale, "dishes.setup.title")}
+        description={getTranslation(locale, "dishes.setup.editDescription")}
+        hint={getTranslation(locale, "dishes.setup.hint")}
+        badgeLabel={getTranslation(locale, "navigation.badges.dishLibrary")}
+        ctaLabel={getTranslation(locale, "dishes.navigation.backToLibrary")}
       />
     );
   }

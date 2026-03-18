@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { useT } from "@/lib/i18n/provider";
 import { appNavigation } from "@/lib/navigation";
 
 export function BottomNav() {
   const pathname = usePathname();
+  const t = useT();
 
   return (
     <nav className="sticky bottom-0 border-t border-white/80 bg-cream/95 px-2 pb-4 pt-3 backdrop-blur">
@@ -34,10 +36,10 @@ export function BottomNav() {
                     isActive ? "bg-blush text-ink" : "bg-sand text-cocoa",
                   ].join(" ")}
                 >
-                  {item.badge}
+                  {t(item.badgeKey)}
                 </span>
                 <span className="text-[11px] font-semibold leading-tight">
-                  {item.label}
+                  {t(item.labelKey)}
                 </span>
               </Link>
             </li>

@@ -6,16 +6,22 @@ export function SetupState({
   title,
   description,
   hint,
+  badgeLabel,
+  ctaLabel = "Back to Dish Library",
+  ctaHref = "/dishes",
 }: {
   title: string;
   description: string;
   hint?: string;
+  badgeLabel: string;
+  ctaLabel?: string;
+  ctaHref?: string;
 }) {
   return (
     <SurfaceCard className="overflow-hidden bg-gradient-to-br from-white via-cream to-almond p-0">
       <div className="px-5 py-6">
         <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blush text-sm font-bold text-ink">
-          DB
+          {badgeLabel}
         </div>
         <h2 className="mt-4 font-[var(--font-heading)] text-3xl font-semibold text-ink">
           {title}
@@ -29,10 +35,10 @@ export function SetupState({
           </p>
         ) : null}
         <Link
-          href="/dishes"
+          href={ctaHref}
           className="mt-5 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
         >
-          Back to Dish Library
+          {ctaLabel}
         </Link>
       </div>
     </SurfaceCard>

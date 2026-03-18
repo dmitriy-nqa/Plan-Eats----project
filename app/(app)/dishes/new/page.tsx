@@ -3,17 +3,22 @@ import { createDishAction } from "../actions";
 import { DishFormScreen } from "@/components/screens/dish-form-screen";
 import { SetupState } from "@/components/ui/setup-state";
 import { addDishDraft } from "@/lib/dish-form";
+import { getRequestLocale } from "@/lib/i18n/server";
+import { getTranslation } from "@/lib/i18n/translate";
 import { getSupabaseConfigurationError } from "@/lib/supabase/server";
 
-export default function NewDishPage() {
+export default async function NewDishPage() {
+  const locale = await getRequestLocale();
   const configurationError = getSupabaseConfigurationError();
 
   if (configurationError) {
     return (
       <SetupState
-        title="Supabase is not configured"
-        description="The Add Dish form cannot save yet because local Supabase environment variables are missing."
-        hint={`${configurationError}. Fill in .env.local from .env.example and restart npm.cmd run dev.`}
+        title={getTranslation(locale, "dishes.setup.title")}
+        description={getTranslation(locale, "dishes.setup.newDescription")}
+        hint={getTranslation(locale, "dishes.setup.hint")}
+        badgeLabel={getTranslation(locale, "navigation.badges.dishLibrary")}
+        ctaLabel={getTranslation(locale, "dishes.navigation.backToLibrary")}
       />
     );
   }

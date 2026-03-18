@@ -13,6 +13,7 @@ import {
   type DishFormValues,
   type DishIngredientDraft,
 } from "@/lib/dish-form";
+import { useLocale, useT } from "@/lib/i18n/provider";
 import { getDishCategoryLabel, getDishLibraryHref, type DishLibraryMode } from "@/lib/dishes";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -81,22 +82,24 @@ function IngredientRow({
   onRemove: () => void;
   canRemove: boolean;
 }) {
+  const t = useT();
+
   return (
     <div className="rounded-[1.5rem] border border-white/80 bg-white/85 p-3 shadow-sm">
       <div className="space-y-3">
         <div>
-          <FieldLabel>Ingredient</FieldLabel>
+          <FieldLabel>{t("dishes.form.fields.ingredient")}</FieldLabel>
           <TextInput
             name="ingredientName"
             value={ingredient.name}
             onChange={(value) => onChange({ ...ingredient, name: value })}
-            placeholder="Tomatoes"
+            placeholder={t("dishes.form.placeholders.ingredient")}
           />
         </div>
 
         <div className="grid grid-cols-[1fr_104px] gap-3">
           <div>
-            <FieldLabel>Quantity</FieldLabel>
+            <FieldLabel>{t("dishes.form.fields.quantity")}</FieldLabel>
             <TextInput
               name="ingredientQuantity"
               value={ingredient.quantity}
@@ -106,7 +109,7 @@ function IngredientRow({
           </div>
 
           <div>
-            <FieldLabel>Unit</FieldLabel>
+            <FieldLabel>{t("dishes.form.fields.unit")}</FieldLabel>
             <select
               name="ingredientUnit"
               value={ingredient.unit}
@@ -135,7 +138,7 @@ function IngredientRow({
           disabled={!canRemove}
           className="rounded-full border border-clay/30 px-3 py-2 text-xs font-semibold text-clay disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Remove row
+          {t("dishes.form.ingredients.removeRow")}
         </button>
       </div>
     </div>
@@ -143,6 +146,7 @@ function IngredientRow({
 }
 
 function SubmitDishButton({ mode }: { mode: "add" | "edit" }) {
+  const t = useT();
   const { pending } = useFormStatus();
 
   return (
@@ -151,7 +155,11 @@ function SubmitDishButton({ mode }: { mode: "add" | "edit" }) {
       disabled={pending}
       className="rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
     >
-      {pending ? "Saving..." : mode === "add" ? "Save dish" : "Save changes"}
+      {pending
+        ? t("dishes.form.actions.saving")
+        : mode === "add"
+          ? t("dishes.form.actions.saveDish")
+          : t("dishes.form.actions.saveChanges")}
     </button>
   );
 }
@@ -169,14 +177,19 @@ export function DishFormScreen({
   dishId?: string;
   libraryMode?: DishLibraryMode;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
   const [form, setForm] = useState(initialValues);
   const nextIngredientId = useRef(initialValues.ingredients.length + 1);
 
-  const title = formMode === "add" ? "Add Dish" : "Edit Dish";
+  const title =
+    formMode === "add"
+      ? t("dishes.form.header.createTitle")
+      : t("dishes.form.header.editTitle");
   const description =
     formMode === "add"
-      ? "Create a family dish with the fields needed for MVP planning and shopping list generation."
-      : "Adjust the dish details, notes, recipe text, and ingredients for the shared family dish database.";
+      ? t("dishes.form.header.createDescription")
+      : t("dishes.form.header.editDescription");
 
   function updateIngredient(index: number, ingredient: DishIngredientDraft) {
     setForm((current) => ({
@@ -223,28 +236,34 @@ export function DishFormScreen({
           href={getDishLibraryHref(libraryMode)}
           className="rounded-full bg-white/90 px-3 py-2 shadow-sm"
         >
-          Back to Dish Library
+          {t("dishes.navigation.backToLibrary")}
         </Link>
         <span className="rounded-full bg-blush px-3 py-2 text-ink">
-          {formMode === "add" ? "New dish" : "Edit mode"}
+          {formMode === "add"
+            ? t("dishes.form.badges.newDish")
+            : t("dishes.form.badges.editMode")}
         </span>
       </div>
 
-      <ScreenHeader eyebrow="Dish Form" title={title} description={description} />
+      <ScreenHeader
+        eyebrow={t("dishes.form.header.eyebrow")}
+        title={title}
+        description={description}
+      />
 
       <SurfaceCard className="space-y-4 bg-gradient-to-br from-white via-cream to-almond">
         <div>
-          <FieldLabel>Dish name</FieldLabel>
+          <FieldLabel>{t("dishes.form.fields.dishName")}</FieldLabel>
           <TextInput
             name="name"
             value={form.name}
             onChange={(value) => setForm((current) => ({ ...current, name: value }))}
-            placeholder="Tomato soup"
+            placeholder={t("dishes.form.placeholders.dishName")}
           />
         </div>
 
         <div>
-          <FieldLabel>Category</FieldLabel>
+          <FieldLabel>{t("dishes.form.fields.category")}</FieldLabel>
           <select
             name="category"
             value={form.category}
@@ -256,32 +275,32 @@ export function DishFormScreen({
             }
             className="w-full rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink outline-none"
           >
-              {dishCategories.map((category) => (
+            {dishCategories.map((category) => (
               <option key={category} value={category}>
-                {getDishCategoryLabel(category)}
+                {getDishCategoryLabel(category, locale)}
               </option>
             ))}
           </select>
         </div>
 
         <div>
-          <FieldLabel>Comment</FieldLabel>
+          <FieldLabel>{t("dishes.form.fields.comment")}</FieldLabel>
           <TextArea
             name="comment"
             value={form.comment}
             onChange={(value) => setForm((current) => ({ ...current, comment: value }))}
-            placeholder="A short family note or serving reminder"
+            placeholder={t("dishes.form.placeholders.comment")}
             minHeight="96px"
           />
         </div>
 
         <div>
-          <FieldLabel>Recipe text</FieldLabel>
+          <FieldLabel>{t("dishes.form.fields.recipeText")}</FieldLabel>
           <TextArea
             name="recipeText"
             value={form.recipeText}
             onChange={(value) => setForm((current) => ({ ...current, recipeText: value }))}
-            placeholder="Write the simple preparation steps here"
+            placeholder={t("dishes.form.placeholders.recipeText")}
             minHeight="140px"
           />
         </div>
@@ -290,13 +309,15 @@ export function DishFormScreen({
       <SurfaceCard className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-ink">Ingredients</p>
+            <p className="text-sm font-semibold text-ink">
+              {t("dishes.form.ingredients.title")}
+            </p>
             <p className="mt-1 text-sm text-cocoa">
-              Add only the MVP values needed for planning and shopping list generation.
+              {t("dishes.form.ingredients.description")}
             </p>
           </div>
           <span className="rounded-full bg-sand px-3 py-1 text-xs font-semibold text-cocoa">
-            {form.ingredients.length} rows
+            {t("dishes.form.ingredients.rowsCount", { count: form.ingredients.length })}
           </span>
         </div>
 
@@ -317,19 +338,19 @@ export function DishFormScreen({
           onClick={addIngredientRow}
           className="w-full rounded-2xl border border-dashed border-clay/40 bg-white px-4 py-3 text-sm font-semibold text-cocoa"
         >
-          Add ingredient row
+          {t("dishes.form.ingredients.addRow")}
         </button>
       </SurfaceCard>
 
       <SurfaceCard className="space-y-3 bg-white/80">
-        <p className="text-sm font-semibold text-ink">Form actions</p>
+        <p className="text-sm font-semibold text-ink">{t("dishes.form.actions.title")}</p>
         <div className="grid grid-cols-2 gap-3">
           <SubmitDishButton mode={formMode} />
           <Link
             href={getDishLibraryHref(libraryMode)}
             className="rounded-2xl border border-clay/30 px-4 py-3 text-center text-sm font-semibold text-cocoa"
           >
-            Cancel
+            {t("common.actions.cancel")}
           </Link>
         </div>
       </SurfaceCard>
