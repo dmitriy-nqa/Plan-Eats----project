@@ -6,7 +6,7 @@ This repository contains **Plan&Eat** — a family web service for weekly meal p
 The product is being built first as an internal family tool for two users.
 
 Full project specification is in:
-- `docs/project-spec.md`
+- `project-spec.md`
 
 ## Product Goals
 The MVP should help users:
@@ -77,7 +77,7 @@ Do **not** add these unless explicitly requested:
 - Prefer simple, maintainable solutions over over-engineered ones.
 - Do not add unnecessary libraries.
 - Do not introduce AI or advanced automation in MVP.
-- If a requirement is unclear, prefer the simplest implementation consistent with `docs/project-spec.md`.
+- If a requirement is unclear, prefer the simplest implementation consistent with `project-spec.md`.
 
 ## Data and Domain Rules
 - One family has one shared dish database, one shared weekly menu, and one shared shopping list per meal plan.
@@ -93,7 +93,7 @@ Do **not** add these unless explicitly requested:
 ## Workflow Rules for Codex
 Before implementing major features:
 1. read `AGENTS.md`
-2. read `docs/project-spec.md`
+2. read `project-spec.md`
 3. summarize the task briefly
 4. implement only the requested scope
 
