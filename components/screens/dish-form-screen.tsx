@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { ScreenHeader } from "@/components/ui/screen-header";
@@ -10,11 +10,23 @@ import {
   createEmptyIngredient,
   dishCategories,
   ingredientUnits,
+  initialDishFormSubmissionState,
+  type DishFormSubmissionState,
   type DishFormValues,
   type DishIngredientDraft,
 } from "@/lib/dish-form";
-import { useLocale, useT } from "@/lib/i18n/provider";
 import { getDishCategoryLabel, getDishLibraryHref, type DishLibraryMode } from "@/lib/dishes";
+import { useLocale, useT } from "@/lib/i18n/provider";
+import {
+  getProductDictionaryEditHref,
+  type ProductSuggestion,
+} from "@/lib/products";
+import { getNormalizedProductKeys } from "@/lib/products-normalization";
+
+type ProductMatch = {
+  product: ProductSuggestion;
+  matchType: "canonical" | "alias" | "token" | "partial";
+};
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -24,16 +36,28 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+function FieldError({ message }: { message?: string }) {
+  if (!message) {
+    return null;
+  }
+
+  return <p className="mt-2 text-sm leading-5 text-[#b04b4b]">{message}</p>;
+}
+
 function TextInput({
   name,
   value,
   onChange,
   placeholder,
+  required = false,
+  hasError = false,
 }: {
   name: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
+  required?: boolean;
+  hasError?: boolean;
 }) {
   return (
     <input
@@ -41,7 +65,12 @@ function TextInput({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
-      className="w-full rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-cocoa/55"
+      required={required}
+      aria-invalid={hasError || undefined}
+      className={[
+        "w-full rounded-2xl bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-cocoa/55",
+        hasError ? "border border-[#d38c8c]" : "border border-white/80",
+      ].join(" ")}
     />
   );
 }
@@ -52,12 +81,14 @@ function TextArea({
   onChange,
   placeholder,
   minHeight,
+  hasError = false,
 }: {
   name: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   minHeight: string;
+  hasError?: boolean;
 }) {
   return (
     <textarea
@@ -65,9 +96,199 @@ function TextArea({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
-      className="w-full resize-none rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm leading-6 text-ink outline-none placeholder:text-cocoa/55"
+      aria-invalid={hasError || undefined}
+      className={[
+        "w-full resize-none rounded-2xl bg-white px-4 py-3 text-sm leading-6 text-ink outline-none placeholder:text-cocoa/55",
+        hasError ? "border border-[#d38c8c]" : "border border-white/80",
+      ].join(" ")}
       style={{ minHeight }}
     />
+  );
+}
+
+function matchScore(matchType: ProductMatch["matchType"]) {
+  switch (matchType) {
+    case "canonical":
+      return 4;
+    case "alias":
+      return 3;
+    case "token":
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function findProductMatches(
+  query: string,
+  productSuggestions: ProductSuggestion[],
+  currentProductId: string | null,
+) {
+  const { normalizedName, tokenKey } = getNormalizedProductKeys(query);
+
+  if (!normalizedName) {
+    return {
+      activeMatches: [] as ProductMatch[],
+      archivedMatch: undefined as ProductMatch | undefined,
+    };
+  }
+
+  const matches = productSuggestions.flatMap((product) => {
+    const canonicalExact = product.normalizedName === normalizedName;
+    const aliasExact = product.aliasNormalizedNames.includes(normalizedName);
+    const tokenMatch = tokenKey.length > 0
+      && (product.tokenKey === tokenKey || product.aliasTokenKeys.includes(tokenKey));
+    const partialMatch = normalizedName.length > 1
+      && (
+        product.normalizedName.includes(normalizedName)
+        || product.aliasNormalizedNames.some((alias) => alias.includes(normalizedName))
+      );
+
+    if (!canonicalExact && !aliasExact && !tokenMatch && !partialMatch) {
+      return [];
+    }
+
+    const matchType: ProductMatch["matchType"] = canonicalExact
+      ? "canonical"
+      : aliasExact
+        ? "alias"
+        : tokenMatch
+          ? "token"
+          : "partial";
+
+    return [{ product, matchType }];
+  });
+
+  const sortedMatches = matches.sort((left, right) => {
+    return matchScore(right.matchType) - matchScore(left.matchType);
+  });
+  const activeMatches = sortedMatches
+    .filter((match) => !match.product.isArchived && match.product.id !== currentProductId)
+    .slice(0, 3);
+  const archivedMatch = sortedMatches.find(
+    (match) => match.product.isArchived && match.product.id !== currentProductId,
+  );
+
+  return {
+    activeMatches,
+    archivedMatch,
+  };
+}
+
+function ProductLinkBadge({
+  ingredient,
+  onUnlink,
+}: {
+  ingredient: DishIngredientDraft;
+  onUnlink: () => void;
+}) {
+  const t = useT();
+
+  if (!ingredient.productId) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <span className="rounded-full bg-sand px-3 py-1 text-xs font-semibold text-cocoa">
+        {t("dishes.form.productLink.linkedTo", {
+          name: ingredient.linkedProductName ?? ingredient.name,
+        })}
+      </span>
+      {ingredient.linkedProductIsArchived ? (
+        <span className="rounded-full bg-leaf/10 px-3 py-1 text-xs font-semibold text-leaf">
+          {t("dishes.form.productLink.archived")}
+        </span>
+      ) : null}
+      <button
+        type="button"
+        onClick={onUnlink}
+        className="rounded-full border border-clay/30 px-3 py-1 text-xs font-semibold text-clay"
+      >
+        {t("dishes.form.productLink.unlink")}
+      </button>
+    </div>
+  );
+}
+
+function ProductSuggestionsBlock({
+  ingredient,
+  productSuggestions,
+  onUseProduct,
+}: {
+  ingredient: DishIngredientDraft;
+  productSuggestions: ProductSuggestion[];
+  onUseProduct: (product: ProductSuggestion) => void;
+}) {
+  const t = useT();
+  const { activeMatches, archivedMatch } = findProductMatches(
+    ingredient.name,
+    productSuggestions,
+    ingredient.productId,
+  );
+
+  if (activeMatches.length === 0 && !archivedMatch) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      {activeMatches.length > 0 ? (
+        <div className="rounded-[1.1rem] bg-sand/55 px-3 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
+            {t("dishes.form.productLink.suggestionsTitle")}
+          </p>
+          <div className="mt-2 space-y-2">
+            {activeMatches.map((match) => (
+              <div
+                key={`${match.product.id}-${match.matchType}`}
+                className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-ink">
+                    {match.product.displayName}
+                  </p>
+                  <p className="text-xs text-cocoa">
+                    {match.matchType === "alias"
+                      ? t("dishes.form.productLink.matchAlias")
+                      : match.matchType === "token"
+                        ? t("dishes.form.productLink.matchToken")
+                        : match.matchType === "partial"
+                          ? t("dishes.form.productLink.matchPartial")
+                          : t("dishes.form.productLink.matchCanonical")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUseProduct(match.product)}
+                  className="rounded-full bg-clay px-3 py-2 text-xs font-semibold text-white"
+                >
+                  {ingredient.productId
+                    ? t("dishes.form.productLink.relink")
+                    : t("dishes.form.productLink.useProduct")}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {archivedMatch ? (
+        <div className="rounded-[1.1rem] border border-leaf/15 bg-white/75 px-3 py-3">
+          <p className="text-sm leading-6 text-cocoa">
+            {t("dishes.form.productLink.archivedMatch", {
+              name: archivedMatch.product.displayName,
+            })}
+          </p>
+          <Link
+            href={getProductDictionaryEditHref(archivedMatch.product.id, "archived")}
+            className="mt-3 inline-flex rounded-full bg-white px-3 py-2 text-xs font-semibold text-cocoa shadow-sm"
+          >
+            {t("dishes.form.productLink.openArchived")}
+          </Link>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -76,16 +297,44 @@ function IngredientRow({
   onChange,
   onRemove,
   canRemove,
+  errorMessage,
+  productSuggestions,
 }: {
   ingredient: DishIngredientDraft;
   onChange: (ingredient: DishIngredientDraft) => void;
   onRemove: () => void;
   canRemove: boolean;
+  errorMessage?: string;
+  productSuggestions: ProductSuggestion[];
 }) {
   const t = useT();
 
+  function handleUseProduct(product: ProductSuggestion) {
+    onChange({
+      ...ingredient,
+      productId: product.id,
+      linkedProductName: product.displayName,
+      linkedProductIsArchived: product.isArchived,
+      name: ingredient.name || product.displayName,
+    });
+  }
+
+  function handleUnlink() {
+    onChange({
+      ...ingredient,
+      productId: null,
+      linkedProductName: undefined,
+      linkedProductIsArchived: undefined,
+    });
+  }
+
   return (
-    <div className="rounded-[1.5rem] border border-white/80 bg-white/85 p-3 shadow-sm">
+    <div
+      className={[
+        "rounded-[1.5rem] bg-white/85 p-3 shadow-sm",
+        errorMessage ? "border border-[#d38c8c]" : "border border-white/80",
+      ].join(" ")}
+    >
       <div className="space-y-3">
         <div>
           <FieldLabel>{t("dishes.form.fields.ingredient")}</FieldLabel>
@@ -94,6 +343,14 @@ function IngredientRow({
             value={ingredient.name}
             onChange={(value) => onChange({ ...ingredient, name: value })}
             placeholder={t("dishes.form.placeholders.ingredient")}
+            hasError={Boolean(errorMessage)}
+          />
+          <input type="hidden" name="ingredientProductId" value={ingredient.productId ?? ""} />
+          <ProductLinkBadge ingredient={ingredient} onUnlink={handleUnlink} />
+          <ProductSuggestionsBlock
+            ingredient={ingredient}
+            productSuggestions={productSuggestions}
+            onUseProduct={handleUseProduct}
           />
         </div>
 
@@ -105,6 +362,7 @@ function IngredientRow({
               value={ingredient.quantity}
               onChange={(value) => onChange({ ...ingredient, quantity: value })}
               placeholder="400"
+              hasError={Boolean(errorMessage)}
             />
           </div>
 
@@ -119,7 +377,11 @@ function IngredientRow({
                   unit: event.target.value as DishIngredientDraft["unit"],
                 })
               }
-              className="w-full rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink outline-none"
+              aria-invalid={Boolean(errorMessage) || undefined}
+              className={[
+                "w-full rounded-2xl bg-white px-4 py-3 text-sm text-ink outline-none",
+                errorMessage ? "border border-[#d38c8c]" : "border border-white/80",
+              ].join(" ")}
             >
               {ingredientUnits.map((unit) => (
                 <option key={unit} value={unit}>
@@ -141,6 +403,8 @@ function IngredientRow({
           {t("dishes.form.ingredients.removeRow")}
         </button>
       </div>
+
+      <FieldError message={errorMessage} />
     </div>
   );
 }
@@ -170,17 +434,26 @@ export function DishFormScreen({
   saveAction,
   dishId,
   libraryMode = "active",
+  productSuggestions,
 }: {
   mode: "add" | "edit";
   initialValues: DishFormValues;
-  saveAction: (formData: FormData) => Promise<void>;
+  saveAction: (
+    state: DishFormSubmissionState,
+    formData: FormData,
+  ) => Promise<DishFormSubmissionState>;
   dishId?: string;
   libraryMode?: DishLibraryMode;
+  productSuggestions: ProductSuggestion[];
 }) {
   const t = useT();
   const { locale } = useLocale();
   const [form, setForm] = useState(initialValues);
   const nextIngredientId = useRef(initialValues.ingredients.length + 1);
+  const [submissionState, submitAction] = useActionState(
+    saveAction,
+    initialDishFormSubmissionState,
+  );
 
   const title =
     formMode === "add"
@@ -227,9 +500,10 @@ export function DishFormScreen({
   }
 
   return (
-    <form action={saveAction} className="space-y-4">
+    <form action={submitAction} className="space-y-4">
       {dishId ? <input type="hidden" name="dishId" value={dishId} /> : null}
       <input type="hidden" name="mode" value={libraryMode} />
+      <input type="hidden" name="locale" value={locale} />
 
       <div className="flex items-center gap-3 text-sm font-semibold text-cocoa">
         <Link
@@ -259,7 +533,10 @@ export function DishFormScreen({
             value={form.name}
             onChange={(value) => setForm((current) => ({ ...current, name: value }))}
             placeholder={t("dishes.form.placeholders.dishName")}
+            required
+            hasError={Boolean(submissionState.fieldErrors.name)}
           />
+          <FieldError message={submissionState.fieldErrors.name} />
         </div>
 
         <div>
@@ -329,6 +606,8 @@ export function DishFormScreen({
               onChange={(value) => updateIngredient(index, value)}
               onRemove={() => removeIngredientRow(index)}
               canRemove={form.ingredients.length > 1}
+              errorMessage={submissionState.fieldErrors.ingredientRows[index]}
+              productSuggestions={productSuggestions}
             />
           ))}
         </div>
@@ -344,6 +623,7 @@ export function DishFormScreen({
 
       <SurfaceCard className="space-y-3 bg-white/80">
         <p className="text-sm font-semibold text-ink">{t("dishes.form.actions.title")}</p>
+        <FieldError message={submissionState.formError} />
         <div className="grid grid-cols-2 gap-3">
           <SubmitDishButton mode={formMode} />
           <Link

@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
+
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { type AppLocale } from "@/lib/i18n/config";
 import { useLocale, useT } from "@/lib/i18n/provider";
+import { productDictionaryRoute } from "@/lib/products";
 
 function LanguageSwitch() {
   const { locale, setLocale } = useLocale();
@@ -54,7 +57,10 @@ function LanguageSwitch() {
 }
 
 export function SettingsPlaceholder() {
+  const { locale } = useLocale();
   const t = useT();
+  const productDictionaryCta =
+    locale === "ru" ? "Открыть словарь продуктов" : "Open product dictionary";
 
   return (
     <div className="space-y-4">
@@ -91,6 +97,21 @@ export function SettingsPlaceholder() {
           <p className="mt-1 text-sm text-cocoa">
             {t("settings.secondUser.description")}
           </p>
+        </div>
+
+        <div className="rounded-2xl bg-sand/55 px-4 py-3">
+          <p className="text-sm font-semibold text-ink">
+            {t("products.header.title")}
+          </p>
+          <p className="mt-1 text-sm text-cocoa">
+            {t("products.header.description")}
+          </p>
+          <Link
+            href={productDictionaryRoute}
+            className="mt-4 inline-flex rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-cocoa shadow-sm"
+          >
+            {productDictionaryCta}
+          </Link>
         </div>
 
         <LanguageSwitch />

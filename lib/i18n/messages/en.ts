@@ -283,6 +283,174 @@ export const enMessages: TranslationMessages = {
         saveChanges: "Save changes",
         saving: "Saving...",
       },
+      validation: {
+        fixErrors: "Check the highlighted fields and try saving again.",
+        nameRequired: "Dish name is required.",
+        ingredientIncomplete:
+          "Ingredient row {row}: fill both ingredient and quantity or leave the row empty.",
+        ingredientQuantityInvalid:
+          "Ingredient row {row}: quantity must be greater than 0.",
+        saveFailed:
+          "We could not save this dish right now. Your changes are still in the form, so you can fix and try again.",
+      },
+      productLink: {
+        linkedTo: "Linked to: {name}",
+        archived: "Archived product",
+        unlink: "Unlink",
+        relink: "Relink",
+        useProduct: "Use product",
+        suggestionsTitle: "Existing products",
+        matchCanonical: "Canonical name match",
+        matchAlias: "Alias match",
+        matchToken: "Word order match",
+        matchPartial: "Similar existing product",
+        archivedMatch:
+          "This ingredient matches archived product \"{name}\". Restore it instead of creating a new duplicate.",
+        openArchived: "Open archived product",
+      },
+    },
+  },
+  products: {
+    setup: {
+      title: "Supabase is not configured",
+      listDescription:
+        "The Products dictionary cannot load until local Supabase variables are configured.",
+      newDescription:
+        "The Add Product form cannot save yet because local Supabase environment variables are missing.",
+      editDescription:
+        "The Edit Product form cannot load or save data until local Supabase variables are configured.",
+      hint:
+        "Fill in .env.local from .env.example and restart npm.cmd run dev.",
+    },
+    navigation: {
+      backToLibrary: "Back to Product Dictionary",
+    },
+    mode: {
+      active: "Active",
+      archived: "Archived",
+    },
+    actions: {
+      addProduct: "Add product",
+    },
+    search: {
+      label: "Search products",
+      placeholder: "Search products",
+    },
+    header: {
+      eyebrow: "Family Product Dictionary",
+      title: "Products",
+      description:
+        "Keep canonical family products tidy, manage aliases, and link dishes to the right ingredient names without turning the app into an admin catalog.",
+    },
+    list: {
+      count: "{count} products",
+      aliasCount: "{count} aliases",
+      activeDescription:
+        "Active products are ready to be reused in dishes and future shopping generation.",
+      archivedDescription:
+        "Archived products stay safe here for history, restore, and cleanup without cluttering active suggestions.",
+      errorTitle: "Could not load Products",
+      unknownError: "Unknown error",
+      empty: {
+        search: {
+          title: "No products match this search",
+          description:
+            "Try a different word or clear the search field to browse the product dictionary again.",
+        },
+        active: {
+          title: "Your product dictionary is still empty",
+          description:
+            "Start with a few canonical products so dishes can link to cleaner, reusable ingredient names.",
+        },
+        archived: {
+          title: "Archived products will appear here",
+          description:
+            "When you archive a product, it leaves the active dictionary and stays here until you restore it.",
+        },
+      },
+    },
+    form: {
+      header: {
+        eyebrow: "Product Form",
+        createTitle: "Add Product",
+        editTitle: "Edit Product",
+        createDescription:
+          "Create a canonical family product and optional aliases for the ingredient names your household actually uses.",
+        editDescription:
+          "Adjust the canonical product name, aliases, archive state, and duplicate cleanup actions.",
+      },
+      badges: {
+        newProduct: "New product",
+        editMode: "Edit mode",
+        archived: "Archived",
+      },
+      fields: {
+        displayName: "Product name",
+      },
+      placeholders: {
+        displayName: "Tomato",
+        alias: "Pomidor",
+      },
+      aliases: {
+        title: "Also known as",
+        description:
+          "Add the household variants that should still resolve to the same canonical product.",
+        rowsCount: "{count} rows",
+        addRow: "Add alias row",
+        removeRow: "Remove row",
+      },
+      actions: {
+        title: "Form actions",
+        saveProduct: "Save product",
+        saveChanges: "Save changes",
+        saving: "Saving...",
+      },
+      duplicate: {
+        canonical:
+          "This name already belongs to product \"{name}\". Open it instead of creating a duplicate.",
+        alias:
+          "This name is already saved as alias \"{alias}\" for product \"{name}\". Use the existing product instead.",
+        token:
+          "This looks like the same product as \"{name}\" with a different word order. Use the existing product instead.",
+        archived:
+          "This name already belongs to archived product \"{name}\". Restore it instead of creating a duplicate.",
+        openExisting: "Open existing product",
+        openArchived: "Open archived product",
+      },
+      validation: {
+        fixErrors: "Check the highlighted fields and try saving again.",
+        displayNameRequired: "Product name is required.",
+        aliasDuplicate: "This alias is already repeated in the form.",
+        aliasMatchesDisplayName: "This alias matches the canonical product name.",
+        saveFailed:
+          "We could not save this product right now. Your changes are still in the form, so you can fix and try again.",
+      },
+    },
+    details: {
+      manageTitle: "Product state",
+      activeDescription:
+        "Archive a product when you do not want it in active suggestions, or keep editing the canonical dictionary entry here.",
+      archivedDescription:
+        "Archived products still protect against duplicates and keep existing dish links valid until you restore them.",
+    },
+    merge: {
+      title: "Merge duplicate into another product",
+      description:
+        "Use this narrow cleanup step when two products should become one canonical entry. Existing dish links will move to the target product.",
+      fields: {
+        targetProduct: "Target product",
+      },
+      placeholders: {
+        targetProduct: "Choose target product",
+      },
+      actions: {
+        merge: "Merge product",
+        merging: "Merging...",
+      },
+      validation: {
+        targetRequired: "Choose a target product before merging.",
+        failed: "We could not merge this product right now. Try again after checking the target.",
+      },
     },
   },
 };

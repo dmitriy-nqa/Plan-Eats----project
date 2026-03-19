@@ -9,6 +9,7 @@ import { fetchDishWithIngredients } from "@/lib/dish-crud";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { getTranslation } from "@/lib/i18n/translate";
 import { parseDishLibraryMode } from "@/lib/dishes";
+import { fetchProductSuggestions } from "@/lib/product-crud";
 import { getSupabaseConfigurationError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,7 @@ export default async function EditDishPage({
   const { dishId } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const dish = await fetchDishWithIngredients(dishId);
+  const productSuggestions = await fetchProductSuggestions();
 
   if (!dish) {
     notFound();
@@ -65,6 +67,7 @@ export default async function EditDishPage({
       saveAction={updateDishAction}
       dishId={dish.id}
       libraryMode={mode}
+      productSuggestions={productSuggestions}
     />
   );
 }

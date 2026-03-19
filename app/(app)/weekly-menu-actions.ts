@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
 function readText(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -29,7 +28,7 @@ export async function assignWeeklySlotAction(formData: FormData) {
   });
 
   revalidatePath("/");
-  redirect("/");
+  revalidatePath("/products");
 }
 
 export async function clearWeeklySlotAction(formData: FormData) {
@@ -41,5 +40,5 @@ export async function clearWeeklySlotAction(formData: FormData) {
   });
 
   revalidatePath("/");
-  redirect("/");
+  revalidatePath("/products");
 }

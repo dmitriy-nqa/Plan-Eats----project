@@ -1,6 +1,11 @@
 import "server-only";
 
-import type { DishFormValues, IngredientUnit } from "@/lib/dish-form";
+import {
+  normalizeIngredientsForWrite,
+  type DishFormValues,
+  type DishIngredientWrite,
+  type IngredientUnit,
+} from "@/lib/dish-form";
 import {
   getDishDerivedSummary,
   type DishCategory,
@@ -31,6 +36,7 @@ type DishIngredientRow = {
   quantity: number | string;
   unit: IngredientUnit;
   sort_order: number | null;
+  product_id: string | null;
 };
 
 export type DishDetails = DishFormValues & {
@@ -48,26 +54,13 @@ function formatQuantity(value: number | string) {
   return `${numericValue}`;
 }
 
-function normalizeIngredientsForWrite(values: DishFormValues) {
-  return values.ingredients
-    .map((ingredient, index) => {
-      const ingredientName = ingredient.name.trim();
-      const quantityText = ingredient.quantity.trim().replace(",", ".");
-      const quantity = Number(quantityText);
-      const unit = allowedUnits.has(ingredient.unit) ? ingredient.unit : "g";
-
-      if (!ingredientName || !quantityText || Number.isNaN(quantity) || quantity <= 0) {
-        return null;
-      }
-
-      return {
-        ingredient_name: ingredientName,
-        quantity,
-        unit,
-        sort_order: index,
-      };
-    })
-    .filter((ingredient): ingredient is NonNullable<typeof ingredient> => ingredient !== null);
+async function syncShoppingListsForDishSafely(dishId: string, reason: string) {
+  try {
+    const { syncShoppingListsForDish } = await import("@/lib/shopping-list-crud");
+    await syncShoppingListsForDish(dishId);
+  } catch (error) {
+    console.error(`Failed to sync shopping lists after ${reason}`, error);
+  }
 }
 
 export async function fetchActiveDishes(
@@ -129,7 +122,7 @@ export async function fetchDishWithIngredients(dishId: string) {
 
   const { data: ingredients, error: ingredientsError } = await supabase
     .from("dish_ingredients")
-    .select("id, ingredient_name, quantity, unit, sort_order")
+    .select("id, ingredient_name, quantity, unit, sort_order, product_id")
     .eq("dish_id", dishId)
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
@@ -138,12 +131,51 @@ export async function fetchDishWithIngredients(dishId: string) {
     throw ingredientsError;
   }
 
-  const mappedIngredients = ((ingredients ?? []) as DishIngredientRow[]).map((ingredient, index) => ({
-    id: ingredient.id || `ingredient-${index + 1}`,
-    name: ingredient.ingredient_name,
-    quantity: formatQuantity(ingredient.quantity),
-    unit: ingredient.unit,
-  }));
+  const ingredientRows = (ingredients ?? []) as DishIngredientRow[];
+  const linkedProductIds = ingredientRows
+    .map((ingredient) => ingredient.product_id)
+    .filter((productId): productId is string => Boolean(productId));
+  const linkedProductMap = new Map<
+    string,
+    {
+      display_name: string;
+      is_archived: boolean;
+    }
+  >();
+
+  if (linkedProductIds.length > 0) {
+    const { data: linkedProducts, error: linkedProductsError } = await supabase
+      .from("products")
+      .select("id, display_name, is_archived")
+      .in("id", [...new Set(linkedProductIds)]);
+
+    if (linkedProductsError) {
+      throw linkedProductsError;
+    }
+
+    for (const product of linkedProducts ?? []) {
+      linkedProductMap.set(String(product.id), {
+        display_name: String(product.display_name),
+        is_archived: Boolean(product.is_archived),
+      });
+    }
+  }
+
+  const mappedIngredients = ingredientRows.map((ingredient, index) => {
+    const linkedProduct = ingredient.product_id
+      ? linkedProductMap.get(ingredient.product_id)
+      : undefined;
+
+    return {
+      id: ingredient.id || `ingredient-${index + 1}`,
+      name: ingredient.ingredient_name,
+      quantity: formatQuantity(ingredient.quantity),
+      unit: ingredient.unit,
+      productId: ingredient.product_id,
+      linkedProductName: linkedProduct?.display_name,
+      linkedProductIsArchived: linkedProduct?.is_archived,
+    };
+  });
 
   const dishRecord = dish as DishDetailsRow;
 
@@ -188,6 +220,7 @@ export async function createDishWithIngredients(values: DishFormValues) {
         quantity: ingredient.quantity,
         unit: ingredient.unit,
         sort_order: ingredient.sort_order,
+        product_id: ingredient.product_id,
       })),
     );
 
@@ -203,6 +236,29 @@ export async function createDishWithIngredients(values: DishFormValues) {
 export async function updateDishWithIngredients(dishId: string, values: DishFormValues) {
   const supabase = getSupabaseServerClient();
   const familyId = getCurrentFamilyId();
+  const nextIngredients = normalizeIngredientsForWrite(values);
+
+  const { data: previousIngredientsData, error: previousIngredientsError } = await supabase
+    .from("dish_ingredients")
+    .select("ingredient_name, quantity, unit, sort_order, product_id")
+    .eq("dish_id", dishId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (previousIngredientsError) {
+    throw previousIngredientsError;
+  }
+
+  const previousIngredients = ((previousIngredientsData ?? []) as DishIngredientRow[]).map(
+    (ingredient) =>
+      ({
+        ingredient_name: ingredient.ingredient_name,
+        quantity: Number(ingredient.quantity),
+        unit: allowedUnits.has(ingredient.unit) ? ingredient.unit : "g",
+        sort_order: ingredient.sort_order ?? 0,
+        product_id: ingredient.product_id,
+      }) satisfies DishIngredientWrite,
+  );
 
   const { error: dishError } = await supabase
     .from("dishes")
@@ -228,25 +284,40 @@ export async function updateDishWithIngredients(dishId: string, values: DishForm
     throw deleteIngredientsError;
   }
 
-  const ingredients = normalizeIngredientsForWrite(values);
-
-  if (ingredients.length === 0) {
+  if (nextIngredients.length === 0) {
+    await syncShoppingListsForDishSafely(dishId, "dish ingredient reset");
     return;
   }
 
   const { error: insertIngredientsError } = await supabase.from("dish_ingredients").insert(
-    ingredients.map((ingredient) => ({
+    nextIngredients.map((ingredient) => ({
       dish_id: dishId,
       ingredient_name: ingredient.ingredient_name,
       quantity: ingredient.quantity,
       unit: ingredient.unit,
       sort_order: ingredient.sort_order,
+      product_id: ingredient.product_id,
     })),
   );
 
   if (insertIngredientsError) {
+    if (previousIngredients.length > 0) {
+      await supabase.from("dish_ingredients").insert(
+        previousIngredients.map((ingredient) => ({
+          dish_id: dishId,
+          ingredient_name: ingredient.ingredient_name,
+          quantity: ingredient.quantity,
+          unit: ingredient.unit,
+          sort_order: ingredient.sort_order,
+          product_id: ingredient.product_id,
+        })),
+      );
+    }
+
     throw insertIngredientsError;
   }
+
+  await syncShoppingListsForDishSafely(dishId, "dish update");
 }
 
 export async function archiveDish(dishId: string) {
@@ -262,6 +333,8 @@ export async function archiveDish(dishId: string) {
   if (error) {
     throw error;
   }
+
+  await syncShoppingListsForDishSafely(dishId, "dish archive");
 }
 
 export async function restoreDish(dishId: string) {
@@ -277,4 +350,6 @@ export async function restoreDish(dishId: string) {
   if (error) {
     throw error;
   }
+
+  await syncShoppingListsForDishSafely(dishId, "dish restore");
 }
