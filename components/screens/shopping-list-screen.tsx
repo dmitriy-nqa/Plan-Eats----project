@@ -4,7 +4,11 @@ import Link from "next/link";
 
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
-import { formatShoppingListCopy, getShoppingListCopy } from "@/lib/shopping-list-copy";
+import {
+  formatShoppingListCopy,
+  getShoppingFlowState,
+  getShoppingListCopy,
+} from "@/lib/shopping-list-copy";
 import { useLocale } from "@/lib/i18n/provider";
 
 type ShoppingListItemView = {
@@ -209,6 +213,32 @@ export function ShoppingListScreen({
   const toBuyItems = items.filter((item) => !item.isChecked);
   const boughtItems = items.filter((item) => item.isChecked);
   const hasItems = items.length > 0;
+  const flowState = getShoppingFlowState({
+    hasMealPlan,
+    totalItems: items.length,
+    toBuyCount: toBuyItems.length,
+    boughtCount: boughtItems.length,
+  });
+  const toBuySummaryClass =
+    flowState === "complete"
+      ? "bg-white/75"
+      : toBuyItems.length > 0
+        ? "border border-blush/25 bg-blush/35"
+        : "bg-white/85";
+  const boughtSummaryClass =
+    flowState === "complete"
+      ? "border border-leaf/20 bg-leaf/10"
+      : boughtItems.length > 0
+        ? "border border-leaf/12 bg-white/90"
+        : "bg-white/85";
+  const toBuyValueClass =
+    flowState === "complete" ? "text-cocoa" : toBuyItems.length > 0 ? "text-ink" : "text-cocoa";
+  const boughtValueClass =
+    flowState === "complete"
+      ? "text-leaf"
+      : boughtItems.length > 0
+        ? "text-ink"
+        : "text-cocoa";
 
   return (
     <div className="space-y-4">
@@ -222,7 +252,12 @@ export function ShoppingListScreen({
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-cocoa">{copy.weekCard.title}</p>
-            <p className="mt-1 text-sm leading-6 text-cocoa">{copy.weekCard.description}</p>
+            <p className="mt-1 text-sm leading-6 text-cocoa">
+              {copy.flow.productsTop.stateDescriptions[flowState]}
+            </p>
+            <p className="mt-3 text-xs font-medium text-cocoa/78">
+              {copy.flow.productsTop.supporting}
+            </p>
           </div>
 
           <Link
@@ -234,20 +269,20 @@ export function ShoppingListScreen({
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-[1.2rem] bg-white/85 px-4 py-3">
+          <div className={`rounded-[1.2rem] px-4 py-3 ${toBuySummaryClass}`}>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
               {copy.sections.toBuy}
             </p>
-            <p className="mt-2 text-lg font-semibold text-ink">
+            <p className={`mt-2 text-lg font-semibold ${toBuyValueClass}`}>
               {formatShoppingListCopy(copy.summary.toBuy, { count: toBuyItems.length })}
             </p>
           </div>
 
-          <div className="rounded-[1.2rem] bg-white/85 px-4 py-3">
+          <div className={`rounded-[1.2rem] px-4 py-3 ${boughtSummaryClass}`}>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
               {copy.sections.bought}
             </p>
-            <p className="mt-2 text-lg font-semibold text-ink">
+            <p className={`mt-2 text-lg font-semibold ${boughtValueClass}`}>
               {formatShoppingListCopy(copy.summary.bought, { count: boughtItems.length })}
             </p>
           </div>
@@ -291,8 +326,14 @@ export function ShoppingListScreen({
                 ))}
               </div>
             ) : (
-              <SurfaceCard className="bg-white/75">
-                <p className="text-sm leading-6 text-cocoa">{copy.empty.manualHint}</p>
+              <SurfaceCard
+                className={
+                  flowState === "complete" ? "border-leaf/15 bg-leaf/8" : "bg-white/75"
+                }
+              >
+                <p className="text-sm leading-6 text-cocoa">
+                  {flowState === "complete" ? copy.flow.completeNote : copy.empty.manualHint}
+                </p>
               </SurfaceCard>
             )}
           </section>

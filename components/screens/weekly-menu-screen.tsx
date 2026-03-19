@@ -10,6 +10,7 @@ import { useLocale, useT } from "@/lib/i18n/provider";
 import { getDishCategoryLabel, type DishSummary } from "@/lib/dishes";
 import {
   formatShoppingListCopy,
+  getShoppingFlowState,
   getShoppingListCopy,
 } from "@/lib/shopping-list-copy";
 import type { CurrentWeekShoppingListSummary } from "@/lib/shopping-list-crud";
@@ -266,21 +267,34 @@ function DayCard({
 }
 
 function ProductsBridgeRow({
-  filledSlots,
+  hasMealPlan,
   shoppingSummary,
 }: {
-  filledSlots: number;
+  hasMealPlan: boolean;
   shoppingSummary: CurrentWeekShoppingListSummary | null;
 }) {
   const t = useT();
   const { locale } = useLocale();
   const shoppingListCopy = getShoppingListCopy(locale);
-  const hasItems = (shoppingSummary?.totalItems ?? 0) > 0;
-  const description = hasItems
-    ? t("weeklyMenu.productsBridge.ready")
-    : filledSlots === 0
-      ? t("weeklyMenu.productsBridge.emptyPlan")
-      : t("weeklyMenu.productsBridge.noItems");
+  const totalItems = shoppingSummary?.totalItems ?? 0;
+  const toBuyCount = shoppingSummary?.toBuyCount ?? 0;
+  const boughtCount = shoppingSummary?.boughtCount ?? 0;
+  const hasItems = totalItems > 0;
+  const flowState = getShoppingFlowState({
+    hasMealPlan,
+    totalItems,
+    toBuyCount,
+    boughtCount,
+  });
+  const description = shoppingListCopy.flow.bridge[flowState];
+  const toBuyBadgeClass =
+    toBuyCount > 0
+      ? "bg-blush/70 text-ink"
+      : "bg-white/90 text-cocoa shadow-sm";
+  const boughtBadgeClass =
+    boughtCount > 0
+      ? "bg-leaf/12 text-leaf"
+      : "bg-white/90 text-cocoa shadow-sm";
 
   return (
     <Link href="/products" className="block">
@@ -293,7 +307,7 @@ function ProductsBridgeRow({
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-ink">
-                {t("weeklyMenu.productsBridge.title")}
+                {shoppingListCopy.header.title}
               </p>
               <span className="inline-flex items-center text-cocoa/70">
                 <svg
@@ -317,14 +331,18 @@ function ProductsBridgeRow({
 
             {hasItems ? (
               <div className="mt-3 flex flex-wrap gap-2">
-                <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${toBuyBadgeClass}`}
+                >
                   {formatShoppingListCopy(shoppingListCopy.summary.toBuy, {
-                    count: shoppingSummary?.toBuyCount ?? 0,
+                    count: toBuyCount,
                   })}
                 </span>
-                <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${boughtBadgeClass}`}
+                >
                   {formatShoppingListCopy(shoppingListCopy.summary.bought, {
-                    count: shoppingSummary?.boughtCount ?? 0,
+                    count: boughtCount,
                   })}
                 </span>
               </div>
@@ -951,7 +969,7 @@ export function WeeklyMenuScreen({
           ) : null}
 
           <ProductsBridgeRow
-            filledSlots={menu.filledSlots}
+            hasMealPlan={menu.hasMealPlan}
             shoppingSummary={shoppingSummary}
           />
         </>
