@@ -155,6 +155,12 @@ export type TranslationMessages = {
       description: string;
       cta: string;
     };
+    productsBridge: {
+      title: string;
+      emptyPlan: string;
+      noItems: string;
+      ready: string;
+    };
     status: {
       unavailableDish: string;
     };
@@ -508,6 +514,10 @@ export type TranslationKey =
   | "weeklyMenu.empty.title"
   | "weeklyMenu.empty.description"
   | "weeklyMenu.empty.cta"
+  | "weeklyMenu.productsBridge.title"
+  | "weeklyMenu.productsBridge.emptyPlan"
+  | "weeklyMenu.productsBridge.noItems"
+  | "weeklyMenu.productsBridge.ready"
   | "weeklyMenu.status.unavailableDish"
   | "weeklyMenu.sheet.closeAriaLabel"
   | "dishes.navigation.backToLibrary"

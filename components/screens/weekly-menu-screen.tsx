@@ -8,6 +8,11 @@ import { SurfaceCard } from "@/components/ui/surface-card";
 import type { AppLocale } from "@/lib/i18n/config";
 import { useLocale, useT } from "@/lib/i18n/provider";
 import { getDishCategoryLabel, type DishSummary } from "@/lib/dishes";
+import {
+  formatShoppingListCopy,
+  getShoppingListCopy,
+} from "@/lib/shopping-list-copy";
+import type { CurrentWeekShoppingListSummary } from "@/lib/shopping-list-crud";
 import type {
   MealType,
   WeeklyMenuDayView,
@@ -257,6 +262,77 @@ function DayCard({
         ))}
       </div>
     </SurfaceCard>
+  );
+}
+
+function ProductsBridgeRow({
+  filledSlots,
+  shoppingSummary,
+}: {
+  filledSlots: number;
+  shoppingSummary: CurrentWeekShoppingListSummary | null;
+}) {
+  const t = useT();
+  const { locale } = useLocale();
+  const shoppingListCopy = getShoppingListCopy(locale);
+  const hasItems = (shoppingSummary?.totalItems ?? 0) > 0;
+  const description = hasItems
+    ? t("weeklyMenu.productsBridge.ready")
+    : filledSlots === 0
+      ? t("weeklyMenu.productsBridge.emptyPlan")
+      : t("weeklyMenu.productsBridge.noItems");
+
+  return (
+    <Link href="/products" className="block">
+      <SurfaceCard className="bg-white/72 px-4 py-3 transition hover:bg-white/88 active:translate-y-px">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sand/80 text-xs font-bold text-cocoa">
+            {t("navigation.badges.products")}
+          </span>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-ink">
+                {t("weeklyMenu.productsBridge.title")}
+              </p>
+              <span className="inline-flex items-center text-cocoa/70">
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 16 16"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M6 4.5 9.5 8 6 11.5" />
+                </svg>
+              </span>
+            </div>
+
+            <p className="mt-1 break-words text-sm leading-6 text-cocoa">
+              {description}
+            </p>
+
+            {hasItems ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
+                  {formatShoppingListCopy(shoppingListCopy.summary.toBuy, {
+                    count: shoppingSummary?.toBuyCount ?? 0,
+                  })}
+                </span>
+                <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
+                  {formatShoppingListCopy(shoppingListCopy.summary.bought, {
+                    count: shoppingSummary?.boughtCount ?? 0,
+                  })}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </SurfaceCard>
+    </Link>
   );
 }
 
@@ -744,12 +820,14 @@ export function WeeklyMenuScreen({
   assignAction,
   clearAction,
   errorMessage,
+  shoppingSummary,
 }: {
   menu: WeeklyMenuView;
   dishes: DishSummary[];
   assignAction: (formData: FormData) => Promise<void>;
   clearAction: (formData: FormData) => Promise<void>;
   errorMessage?: string;
+  shoppingSummary: CurrentWeekShoppingListSummary | null;
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -871,6 +949,11 @@ export function WeeklyMenuScreen({
               archivedLabel={t("weeklyMenu.slot.archived")}
             />
           ) : null}
+
+          <ProductsBridgeRow
+            filledSlots={menu.filledSlots}
+            shoppingSummary={shoppingSummary}
+          />
         </>
       ) : null}
 
@@ -988,6 +1071,16 @@ export function WeeklyMenuScreenSkeleton() {
               <SkeletonBlock className="mt-3 h-4 w-40" />
             </div>
           ))}
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard className="bg-white/72 px-4 py-3">
+        <div className="flex items-start gap-3">
+          <SkeletonBlock className="h-10 w-10 rounded-2xl" />
+          <div className="flex-1 space-y-2">
+            <SkeletonBlock className="h-4 w-24" />
+            <SkeletonBlock className="h-4 w-44" />
+          </div>
         </div>
       </SurfaceCard>
     </div>

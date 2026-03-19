@@ -148,6 +148,13 @@ export const enMessages: TranslationMessages = {
         "Add at least one non-archived dish, then come back here and assign it to a slot.",
       cta: "Add first dish",
     },
+    productsBridge: {
+      title: "Products",
+      emptyPlan:
+        "Products builds from your weekly dishes and stays ready for separate buys too.",
+      noItems: "Products is collecting this week's dishes.",
+      ready: "This week's shopping is already gathered.",
+    },
     status: {
       unavailableDish: "Unavailable dish",
     },

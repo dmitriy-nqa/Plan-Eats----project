@@ -132,6 +132,12 @@ export type CurrentWeekShoppingListSnapshot = {
   items: ShoppingListItemSnapshot[];
 };
 
+export type CurrentWeekShoppingListSummary = {
+  totalItems: number;
+  toBuyCount: number;
+  boughtCount: number;
+};
+
 export type CurrentWeekShoppingListPageData = {
   hasMealPlan: boolean;
   snapshot: CurrentWeekShoppingListSnapshot | null;
@@ -987,6 +993,23 @@ export async function fetchCurrentWeekShoppingListSnapshot() {
       sourceKey: item.source_key,
     })),
   } satisfies CurrentWeekShoppingListSnapshot;
+}
+
+export async function fetchCurrentWeekShoppingListSummary(): Promise<CurrentWeekShoppingListSummary | null> {
+  const snapshot = await ensureCurrentWeekShoppingListFresh();
+
+  if (!snapshot) {
+    return null;
+  }
+
+  const toBuyCount = snapshot.items.filter((item) => !item.isChecked).length;
+  const boughtCount = snapshot.items.length - toBuyCount;
+
+  return {
+    totalItems: snapshot.items.length,
+    toBuyCount,
+    boughtCount,
+  };
 }
 
 export async function fetchCurrentWeekShoppingListItem(

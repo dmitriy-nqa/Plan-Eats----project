@@ -9,6 +9,7 @@ import {
 import { fetchActiveDishes } from "@/lib/dish-crud";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { getTranslation } from "@/lib/i18n/translate";
+import { fetchCurrentWeekShoppingListSummary } from "@/lib/shopping-list-crud";
 import { getSupabaseConfigurationError } from "@/lib/supabase/server";
 import { buildEmptyWeeklyMenuView } from "@/lib/weekly-menu";
 import { fetchCurrentWeekMenu } from "@/lib/weekly-menu-crud";
@@ -36,14 +37,16 @@ async function WeeklyMenuPageContent() {
         assignAction={assignWeeklySlotAction}
         clearAction={clearWeeklySlotAction}
         errorMessage={getTranslation(locale, "weeklyMenu.errors.configurationHelp")}
+        shoppingSummary={null}
       />
     );
   }
 
   try {
-    const [menu, dishes] = await Promise.all([
+    const [menu, dishes, shoppingSummary] = await Promise.all([
       fetchCurrentWeekMenu(locale),
       fetchActiveDishes(locale, "weeklyMenu.picker.summaryFallback"),
+      fetchCurrentWeekShoppingListSummary(),
     ]);
 
     return (
@@ -52,6 +55,7 @@ async function WeeklyMenuPageContent() {
         dishes={dishes}
         assignAction={assignWeeklySlotAction}
         clearAction={clearWeeklySlotAction}
+        shoppingSummary={shoppingSummary}
       />
     );
   } catch (error) {
@@ -67,6 +71,7 @@ async function WeeklyMenuPageContent() {
         assignAction={assignWeeklySlotAction}
         clearAction={clearWeeklySlotAction}
         errorMessage={message}
+        shoppingSummary={null}
       />
     );
   }

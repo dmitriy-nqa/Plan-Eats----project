@@ -149,6 +149,13 @@ export const ruMessages: TranslationMessages = {
         "Добавьте хотя бы одно неархивное блюдо, затем вернитесь сюда и назначьте его в слот.",
       cta: "Добавить первое блюдо",
     },
+    productsBridge: {
+      title: "Products",
+      emptyPlan:
+        "Products собирается из блюд недели и остаётся под рукой для отдельных покупок.",
+      noItems: "Products собирается из блюд этой недели.",
+      ready: "Покупки на эту неделю уже собраны.",
+    },
     status: {
       unavailableDish: "Недоступное блюдо",
     },
