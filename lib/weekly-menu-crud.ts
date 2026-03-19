@@ -326,6 +326,26 @@ export async function assignDishToCurrentWeekSlot({
   if (slotError) {
     throw slotError;
   }
+
+  try {
+    const {
+      markShoppingListSourceChangedByMealPlanId,
+      syncShoppingListByMealPlanId,
+    } = await import("@/lib/shopping-list-crud");
+
+    await markShoppingListSourceChangedByMealPlanId(mealPlan.id);
+    await syncShoppingListByMealPlanId(mealPlan.id, {
+      type: "slots",
+      slots: [
+        {
+          dayIndex,
+          mealType: normalizedMealType,
+        },
+      ],
+    });
+  } catch (error) {
+    console.error("Failed to sync shopping list after slot assignment", error);
+  }
 }
 
 export async function clearCurrentWeekSlot({
@@ -354,5 +374,25 @@ export async function clearCurrentWeekSlot({
 
   if (error) {
     throw error;
+  }
+
+  try {
+    const {
+      markShoppingListSourceChangedByMealPlanId,
+      syncShoppingListByMealPlanId,
+    } = await import("@/lib/shopping-list-crud");
+
+    await markShoppingListSourceChangedByMealPlanId(mealPlan.id);
+    await syncShoppingListByMealPlanId(mealPlan.id, {
+      type: "slots",
+      slots: [
+        {
+          dayIndex,
+          mealType: normalizedMealType,
+        },
+      ],
+    });
+  } catch (syncError) {
+    console.error("Failed to sync shopping list after slot clear", syncError);
   }
 }

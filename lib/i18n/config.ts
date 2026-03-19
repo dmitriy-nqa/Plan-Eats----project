@@ -275,6 +275,149 @@ export type TranslationMessages = {
         saveChanges: string;
         saving: string;
       };
+      validation: {
+        fixErrors: string;
+        nameRequired: string;
+        ingredientIncomplete: string;
+        ingredientQuantityInvalid: string;
+        saveFailed: string;
+      };
+      productLink: {
+        linkedTo: string;
+        archived: string;
+        unlink: string;
+        relink: string;
+        useProduct: string;
+        suggestionsTitle: string;
+        matchCanonical: string;
+        matchAlias: string;
+        matchToken: string;
+        matchPartial: string;
+        archivedMatch: string;
+        openArchived: string;
+      };
+    };
+  };
+  products: {
+    setup: {
+      title: string;
+      listDescription: string;
+      newDescription: string;
+      editDescription: string;
+      hint: string;
+    };
+    navigation: {
+      backToLibrary: string;
+    };
+    mode: {
+      active: string;
+      archived: string;
+    };
+    actions: {
+      addProduct: string;
+    };
+    search: {
+      label: string;
+      placeholder: string;
+    };
+    header: {
+      eyebrow: string;
+      title: string;
+      description: string;
+    };
+    list: {
+      count: string;
+      aliasCount: string;
+      activeDescription: string;
+      archivedDescription: string;
+      errorTitle: string;
+      unknownError: string;
+      empty: {
+        search: {
+          title: string;
+          description: string;
+        };
+        active: {
+          title: string;
+          description: string;
+        };
+        archived: {
+          title: string;
+          description: string;
+        };
+      };
+    };
+    form: {
+      header: {
+        eyebrow: string;
+        createTitle: string;
+        editTitle: string;
+        createDescription: string;
+        editDescription: string;
+      };
+      badges: {
+        newProduct: string;
+        editMode: string;
+        archived: string;
+      };
+      fields: {
+        displayName: string;
+      };
+      placeholders: {
+        displayName: string;
+        alias: string;
+      };
+      aliases: {
+        title: string;
+        description: string;
+        rowsCount: string;
+        addRow: string;
+        removeRow: string;
+      };
+      actions: {
+        title: string;
+        saveProduct: string;
+        saveChanges: string;
+        saving: string;
+      };
+      duplicate: {
+        canonical: string;
+        alias: string;
+        token: string;
+        archived: string;
+        openExisting: string;
+        openArchived: string;
+      };
+      validation: {
+        fixErrors: string;
+        displayNameRequired: string;
+        aliasDuplicate: string;
+        aliasMatchesDisplayName: string;
+        saveFailed: string;
+      };
+    };
+    details: {
+      manageTitle: string;
+      activeDescription: string;
+      archivedDescription: string;
+    };
+    merge: {
+      title: string;
+      description: string;
+      fields: {
+        targetProduct: string;
+      };
+      placeholders: {
+        targetProduct: string;
+      };
+      actions: {
+        merge: string;
+        merging: string;
+      };
+      validation: {
+        targetRequired: string;
+        failed: string;
+      };
     };
   };
 };
@@ -431,7 +574,92 @@ export type TranslationKey =
   | "dishes.form.actions.title"
   | "dishes.form.actions.saveDish"
   | "dishes.form.actions.saveChanges"
-  | "dishes.form.actions.saving";
+  | "dishes.form.actions.saving"
+  | "dishes.form.validation.fixErrors"
+  | "dishes.form.validation.nameRequired"
+  | "dishes.form.validation.ingredientIncomplete"
+  | "dishes.form.validation.ingredientQuantityInvalid"
+  | "dishes.form.validation.saveFailed"
+  | "dishes.form.productLink.linkedTo"
+  | "dishes.form.productLink.archived"
+  | "dishes.form.productLink.unlink"
+  | "dishes.form.productLink.relink"
+  | "dishes.form.productLink.useProduct"
+  | "dishes.form.productLink.suggestionsTitle"
+  | "dishes.form.productLink.matchCanonical"
+  | "dishes.form.productLink.matchAlias"
+  | "dishes.form.productLink.matchToken"
+  | "dishes.form.productLink.matchPartial"
+  | "dishes.form.productLink.archivedMatch"
+  | "dishes.form.productLink.openArchived"
+  | "products.setup.title"
+  | "products.setup.listDescription"
+  | "products.setup.newDescription"
+  | "products.setup.editDescription"
+  | "products.setup.hint"
+  | "products.navigation.backToLibrary"
+  | "products.mode.active"
+  | "products.mode.archived"
+  | "products.actions.addProduct"
+  | "products.search.label"
+  | "products.search.placeholder"
+  | "products.header.eyebrow"
+  | "products.header.title"
+  | "products.header.description"
+  | "products.list.count"
+  | "products.list.aliasCount"
+  | "products.list.activeDescription"
+  | "products.list.archivedDescription"
+  | "products.list.errorTitle"
+  | "products.list.unknownError"
+  | "products.list.empty.search.title"
+  | "products.list.empty.search.description"
+  | "products.list.empty.active.title"
+  | "products.list.empty.active.description"
+  | "products.list.empty.archived.title"
+  | "products.list.empty.archived.description"
+  | "products.form.header.eyebrow"
+  | "products.form.header.createTitle"
+  | "products.form.header.editTitle"
+  | "products.form.header.createDescription"
+  | "products.form.header.editDescription"
+  | "products.form.badges.newProduct"
+  | "products.form.badges.editMode"
+  | "products.form.badges.archived"
+  | "products.form.fields.displayName"
+  | "products.form.placeholders.displayName"
+  | "products.form.placeholders.alias"
+  | "products.form.aliases.title"
+  | "products.form.aliases.description"
+  | "products.form.aliases.rowsCount"
+  | "products.form.aliases.addRow"
+  | "products.form.aliases.removeRow"
+  | "products.form.actions.title"
+  | "products.form.actions.saveProduct"
+  | "products.form.actions.saveChanges"
+  | "products.form.actions.saving"
+  | "products.form.duplicate.canonical"
+  | "products.form.duplicate.alias"
+  | "products.form.duplicate.token"
+  | "products.form.duplicate.archived"
+  | "products.form.duplicate.openExisting"
+  | "products.form.duplicate.openArchived"
+  | "products.form.validation.fixErrors"
+  | "products.form.validation.displayNameRequired"
+  | "products.form.validation.aliasDuplicate"
+  | "products.form.validation.aliasMatchesDisplayName"
+  | "products.form.validation.saveFailed"
+  | "products.details.manageTitle"
+  | "products.details.activeDescription"
+  | "products.details.archivedDescription"
+  | "products.merge.title"
+  | "products.merge.description"
+  | "products.merge.fields.targetProduct"
+  | "products.merge.placeholders.targetProduct"
+  | "products.merge.actions.merge"
+  | "products.merge.actions.merging"
+  | "products.merge.validation.targetRequired"
+  | "products.merge.validation.failed";
 
 export function isAppLocale(value: string | null | undefined): value is AppLocale {
   return appLocales.includes(value as AppLocale);

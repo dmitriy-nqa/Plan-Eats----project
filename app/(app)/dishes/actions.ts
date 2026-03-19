@@ -7,10 +7,15 @@ import {
   dishCategories,
   ingredientUnits,
   type DishCategoryOption,
+  type DishFormSubmissionState,
   type DishFormValues,
   type IngredientUnit,
+  initialDishFormSubmissionState,
+  validateDishFormValues,
 } from "@/lib/dish-form";
 import { getDishLibraryHref, parseDishLibraryMode } from "@/lib/dishes";
+import type { AppLocale } from "@/lib/i18n/config";
+import { getTranslation } from "@/lib/i18n/translate";
 
 function isDishCategory(value: string): value is DishCategoryOption {
   return dishCategories.includes(value as DishCategoryOption);
@@ -25,10 +30,15 @@ function readText(formData: FormData, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function readLocale(formData: FormData): AppLocale {
+  return readText(formData, "locale") === "ru" ? "ru" : "en";
+}
+
 function parseDishFormData(formData: FormData) {
   const ingredientNames = formData.getAll("ingredientName").map((value) => String(value));
   const ingredientQuantities = formData.getAll("ingredientQuantity").map((value) => String(value));
   const ingredientUnitValues = formData.getAll("ingredientUnit").map((value) => String(value));
+  const ingredientProductIds = formData.getAll("ingredientProductId").map((value) => String(value));
   const categoryValue = readText(formData, "category");
   const category = isDishCategory(categoryValue) ? categoryValue : "main_course";
 
@@ -40,6 +50,7 @@ function parseDishFormData(formData: FormData) {
       name,
       quantity: ingredientQuantities[index] ?? "",
       unit: isIngredientUnit(unitValue) ? unitValue : "g",
+      productId: ingredientProductIds[index]?.trim() || null,
     };
   });
 
@@ -52,28 +63,110 @@ function parseDishFormData(formData: FormData) {
   } satisfies DishFormValues;
 }
 
-export async function createDishAction(formData: FormData) {
+function buildValidationState(
+  locale: AppLocale,
+  values: DishFormValues,
+): DishFormSubmissionState {
+  const issues = validateDishFormValues(values);
+
+  if (issues.length === 0) {
+    return initialDishFormSubmissionState;
+  }
+
+  const ingredientRows: Record<number, string> = {};
+  let nameError: string | undefined;
+
+  for (const issue of issues) {
+    if (issue.code === "name_required") {
+      nameError = getTranslation(locale, "dishes.form.validation.nameRequired");
+      continue;
+    }
+
+    ingredientRows[issue.rowIndex] =
+      issue.code === "ingredient_incomplete"
+        ? getTranslation(locale, "dishes.form.validation.ingredientIncomplete", {
+            row: issue.rowIndex + 1,
+          })
+        : getTranslation(locale, "dishes.form.validation.ingredientQuantityInvalid", {
+            row: issue.rowIndex + 1,
+          });
+  }
+
+  return {
+    status: "error",
+    formError: getTranslation(locale, "dishes.form.validation.fixErrors"),
+    fieldErrors: {
+      name: nameError,
+      ingredientRows,
+    },
+  };
+}
+
+function buildSaveFailedState(locale: AppLocale): DishFormSubmissionState {
+  return {
+    status: "error",
+    formError: getTranslation(locale, "dishes.form.validation.saveFailed"),
+    fieldErrors: {
+      ingredientRows: {},
+    },
+  };
+}
+
+export async function createDishAction(
+  _previousState: DishFormSubmissionState,
+  formData: FormData,
+): Promise<DishFormSubmissionState> {
   const { createDishWithIngredients } = await import("@/lib/dish-crud");
+  const locale = readLocale(formData);
   const values = parseDishFormData(formData);
-  await createDishWithIngredients(values);
+  const validationState = buildValidationState(locale, values);
+
+  if (validationState.status === "error") {
+    return validationState;
+  }
+
+  try {
+    await createDishWithIngredients(values);
+  } catch (error) {
+    console.error("Failed to create dish", error);
+    return buildSaveFailedState(locale);
+  }
+
   revalidatePath("/dishes");
   redirect("/dishes");
 }
 
-export async function updateDishAction(formData: FormData) {
+export async function updateDishAction(
+  _previousState: DishFormSubmissionState,
+  formData: FormData,
+): Promise<DishFormSubmissionState> {
   const { updateDishWithIngredients } = await import("@/lib/dish-crud");
   const dishId = readText(formData, "dishId");
+  const locale = readLocale(formData);
   const mode = parseDishLibraryMode(readText(formData, "mode") || undefined);
 
   if (!dishId) {
-    throw new Error("Missing dish id for update");
+    return buildSaveFailedState(locale);
   }
 
   const values = parseDishFormData(formData);
-  await updateDishWithIngredients(dishId, values);
+  const validationState = buildValidationState(locale, values);
+
+  if (validationState.status === "error") {
+    return validationState;
+  }
+
+  try {
+    await updateDishWithIngredients(dishId, values);
+  } catch (error) {
+    console.error("Failed to update dish", error);
+    return buildSaveFailedState(locale);
+  }
+
   revalidatePath("/dishes");
   revalidatePath(`/dishes/${dishId}`);
   revalidatePath(`/dishes/${dishId}/edit`);
+  revalidatePath("/products");
   redirect(`/dishes/${dishId}?mode=${mode}`);
 }
 
@@ -87,6 +180,7 @@ export async function archiveDishAction(formData: FormData) {
 
   await archiveDish(dishId);
   revalidatePath("/dishes");
+  revalidatePath("/products");
   redirect(getDishLibraryHref("archived"));
 }
 
@@ -102,5 +196,6 @@ export async function restoreDishAction(formData: FormData) {
   revalidatePath("/dishes");
   revalidatePath(`/dishes/${dishId}`);
   revalidatePath(`/dishes/${dishId}/edit`);
+  revalidatePath("/products");
   redirect(getDishLibraryHref("active"));
 }

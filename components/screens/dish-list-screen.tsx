@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -339,21 +339,18 @@ export function DishListScreen({
   const [query, setQuery] = useState("");
   const [collapsedSections, setCollapsedSections] = useState<
     Partial<Record<DishCategory, boolean>>
-  >({});
-  const [isSectionStateReady, setIsSectionStateReady] = useState(false);
-
-  useLayoutEffect(() => {
-    setCollapsedSections(readCollapsedSections(mode));
-    setIsSectionStateReady(true);
-  }, [mode]);
+  >(() => readCollapsedSections(mode));
+  const collapsedSectionsModeRef = useRef(mode);
 
   useEffect(() => {
-    if (!isSectionStateReady) {
+    if (collapsedSectionsModeRef.current !== mode) {
+      collapsedSectionsModeRef.current = mode;
+      setCollapsedSections(readCollapsedSections(mode));
       return;
     }
 
     writeCollapsedSections(mode, collapsedSections);
-  }, [collapsedSections, isSectionStateReady, mode]);
+  }, [collapsedSections, mode]);
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredDishes = initialDishes.filter((dish) => {
@@ -443,10 +440,7 @@ export function DishListScreen({
       ) : null}
 
       {!errorMessage && hasResults ? (
-        <div
-          className="space-y-4"
-          style={{ visibility: isSectionStateReady ? "visible" : "hidden" }}
-        >
+        <div className="space-y-4">
           {sections.map((section) => {
             const isExpanded = hasSearchQuery ? true : !collapsedSections[section.category];
 

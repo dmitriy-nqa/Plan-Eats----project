@@ -5,6 +5,7 @@ import { SetupState } from "@/components/ui/setup-state";
 import { addDishDraft } from "@/lib/dish-form";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { getTranslation } from "@/lib/i18n/translate";
+import { fetchProductSuggestions } from "@/lib/product-crud";
 import { getSupabaseConfigurationError } from "@/lib/supabase/server";
 
 export default async function NewDishPage() {
@@ -23,11 +24,14 @@ export default async function NewDishPage() {
     );
   }
 
+  const productSuggestions = await fetchProductSuggestions();
+
   return (
     <DishFormScreen
       mode="add"
       initialValues={addDishDraft}
       saveAction={createDishAction}
+      productSuggestions={productSuggestions}
     />
   );
 }
