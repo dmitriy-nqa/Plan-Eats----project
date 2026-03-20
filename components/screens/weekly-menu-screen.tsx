@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -864,12 +864,22 @@ export function WeeklyMenuScreen({
   const selectedSlot = selectedDay?.slots.find(
     (slot) => slot.mealType === sheetState?.mealType,
   );
+  const isDetailsSheetInvalid =
+    sheetState?.mode === "details" && (!selectedDay || !selectedSlot || !selectedSlot.dishId);
   const mealsAssignedText = activeDay
     ? t("weeklyMenu.day.mealsAssigned", {
         filled: activeDay.filledMeals,
         total: activeDay.slots.length,
       })
     : "";
+
+  useEffect(() => {
+    if (!isDetailsSheetInvalid) {
+      return;
+    }
+
+    setSheetState(null);
+  }, [isDetailsSheetInvalid]);
 
   return (
     <div className="space-y-4">
@@ -975,7 +985,7 @@ export function WeeklyMenuScreen({
         </>
       ) : null}
 
-      {selectedDay && selectedSlot && sheetState?.mode === "details" ? (
+      {selectedDay && selectedSlot?.dishId && sheetState?.mode === "details" ? (
         <DishDetailsSheet
           day={selectedDay}
           slot={selectedSlot}
