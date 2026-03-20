@@ -18,6 +18,7 @@ export type ShoppingListSourceIdentity = {
 export type ShoppingListContributionIdentity = ShoppingListSourceIdentity & {
   dayIndex: number;
   mealType: MealType;
+  slotItemKey: string;
 };
 
 export type ShoppingListSlotCoordinate = {
@@ -56,7 +57,12 @@ export function buildShoppingListContributionKey(
     `meal-plan:${identity.mealPlanId}`,
     `day:${identity.dayIndex}`,
     `meal:${identity.mealType}`,
+    `slot-item:${identity.slotItemKey}`,
     buildSemanticIdentityPart(identity),
     `unit:${identity.unit}`,
   ].join("|");
+}
+
+export function isSlotItemAwareContributionKey(contributionKey: string) {
+  return contributionKey.includes("|slot-item:");
 }

@@ -1,6 +1,12 @@
 import { Suspense } from "react";
 
-import { assignWeeklySlotAction, clearWeeklySlotAction } from "./weekly-menu-actions";
+import {
+  addWeeklySlotDishAction,
+  assignWeeklySlotAction,
+  clearWeeklySlotAction,
+  removeWeeklySlotItemAction,
+  replaceWeeklySlotItemAction,
+} from "./weekly-menu-actions";
 
 import {
   WeeklyMenuScreen,
@@ -36,6 +42,9 @@ async function WeeklyMenuPageContent() {
         dishes={[]}
         assignAction={assignWeeklySlotAction}
         clearAction={clearWeeklySlotAction}
+        addDishAction={addWeeklySlotDishAction}
+        replaceItemAction={replaceWeeklySlotItemAction}
+        removeItemAction={removeWeeklySlotItemAction}
         errorMessage={getTranslation(locale, "weeklyMenu.errors.configurationHelp")}
         shoppingSummary={null}
       />
@@ -55,6 +64,9 @@ async function WeeklyMenuPageContent() {
         dishes={dishes}
         assignAction={assignWeeklySlotAction}
         clearAction={clearWeeklySlotAction}
+        addDishAction={addWeeklySlotDishAction}
+        replaceItemAction={replaceWeeklySlotItemAction}
+        removeItemAction={removeWeeklySlotItemAction}
         shoppingSummary={shoppingSummary}
       />
     );
@@ -70,6 +82,9 @@ async function WeeklyMenuPageContent() {
         dishes={[]}
         assignAction={assignWeeklySlotAction}
         clearAction={clearWeeklySlotAction}
+        addDishAction={addWeeklySlotDishAction}
+        replaceItemAction={replaceWeeklySlotItemAction}
+        removeItemAction={removeWeeklySlotItemAction}
         errorMessage={message}
         shoppingSummary={null}
       />

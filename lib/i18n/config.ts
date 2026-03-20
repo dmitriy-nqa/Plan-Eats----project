@@ -110,6 +110,19 @@ export type TranslationMessages = {
       pick: string;
       archived: string;
     };
+    slotFlow?: {
+      eyebrow: string;
+      emptyTitle: string;
+      emptyDescription: string;
+      addFirst: string;
+      addMore: string;
+      remove: string;
+      removeConfirm: string;
+      backToSlot: string;
+      alreadyInSlot: string;
+      duplicateNotice: string;
+      actionFailed: string;
+    };
     picker: {
       eyebrow: string;
       replaceEyebrow: string;
@@ -483,6 +496,17 @@ export type TranslationKey =
   | "weeklyMenu.slot.chooseDish"
   | "weeklyMenu.slot.pick"
   | "weeklyMenu.slot.archived"
+  | "weeklyMenu.slotFlow.eyebrow"
+  | "weeklyMenu.slotFlow.emptyTitle"
+  | "weeklyMenu.slotFlow.emptyDescription"
+  | "weeklyMenu.slotFlow.addFirst"
+  | "weeklyMenu.slotFlow.addMore"
+  | "weeklyMenu.slotFlow.remove"
+  | "weeklyMenu.slotFlow.removeConfirm"
+  | "weeklyMenu.slotFlow.backToSlot"
+  | "weeklyMenu.slotFlow.alreadyInSlot"
+  | "weeklyMenu.slotFlow.duplicateNotice"
+  | "weeklyMenu.slotFlow.actionFailed"
   | "weeklyMenu.picker.eyebrow"
   | "weeklyMenu.picker.replaceEyebrow"
   | "weeklyMenu.picker.backToDetails"

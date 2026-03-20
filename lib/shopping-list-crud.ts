@@ -7,11 +7,17 @@ import {
   buildShoppingListContributionKey,
   buildShoppingListSourceKey,
   getShoppingListNormalizedName,
+  isSlotItemAwareContributionKey,
   type ShoppingListAdjustmentType,
   type ShoppingListSlotCoordinate,
   type ShoppingListSourceType,
 } from "@/lib/shopping-list";
-import { getCurrentWeekRange, isMealType, type MealType } from "@/lib/weekly-menu";
+import {
+  buildWeeklyMenuSlotItemLineageKey,
+  getCurrentWeekRange,
+  isMealType,
+  type MealType,
+} from "@/lib/weekly-menu";
 import { getCurrentFamilyId, getSupabaseServerClient } from "@/lib/supabase/server";
 
 type MealPlanRow = {
@@ -22,10 +28,18 @@ type MealPlanRow = {
 };
 
 type MealPlanSlotRow = {
+  id: string;
   meal_plan_id: string;
   day_index: number;
   meal_type: string;
   dish_id: string;
+};
+
+type MealPlanSlotItemRow = {
+  id: string;
+  slot_id: string;
+  dish_id: string;
+  sort_order: number;
 };
 
 type DishIngredientRow = {
@@ -100,6 +114,7 @@ type ShoppingListAdjustmentRow = {
 type SlotContributionDraft = {
   contributionKey: string;
   sourceKey: string;
+  slotItemKey: string;
   dayIndex: number;
   mealType: MealType;
   dishId: string;
@@ -207,6 +222,16 @@ function assertMealTypeValue(value: string): MealType {
   }
 
   return value;
+}
+
+function isMissingSlotItemStorageError(error: {
+  code?: string;
+  message?: string;
+} | null | undefined) {
+  return (
+    error?.code === "PGRST205" ||
+    error?.message?.includes("meal_plan_slot_items") === true
+  );
 }
 
 async function fetchCurrentWeekMealPlan() {
@@ -342,19 +367,97 @@ async function fetchMealPlanSlots(mealPlanId: string) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
     .from("meal_plan_slots")
-    .select("meal_plan_id, day_index, meal_type, dish_id")
+    .select("id, meal_plan_id, day_index, meal_type, dish_id")
     .eq("meal_plan_id", mealPlanId);
 
   if (error) {
     throw error;
   }
 
-  return ((data ?? []) as MealPlanSlotRow[]).map((slot) => ({
-    mealPlanId: slot.meal_plan_id,
-    dayIndex: slot.day_index,
-    mealType: assertMealTypeValue(slot.meal_type),
-    dishId: slot.dish_id,
-  }));
+  const slotRows = (data ?? []) as MealPlanSlotRow[];
+
+  if (slotRows.length === 0) {
+    return [];
+  }
+
+  const { data: itemData, error: itemError } = await supabase
+    .from("meal_plan_slot_items")
+    .select("id, slot_id, dish_id, sort_order")
+    .in(
+      "slot_id",
+      slotRows.map((slot) => slot.id),
+    )
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (itemError) {
+    if (isMissingSlotItemStorageError(itemError)) {
+      return slotRows.map((slot) => ({
+        slotId: slot.id,
+        slotItemKey: buildWeeklyMenuSlotItemLineageKey({
+          slotId: slot.id,
+          dayIndex: slot.day_index,
+          mealType: assertMealTypeValue(slot.meal_type),
+          dishId: slot.dish_id,
+          sortOrder: 0,
+        }),
+        mealPlanId: slot.meal_plan_id,
+        dayIndex: slot.day_index,
+        mealType: assertMealTypeValue(slot.meal_type),
+        dishId: slot.dish_id,
+      }));
+    }
+
+    throw itemError;
+  }
+
+  const itemsBySlotId = new Map<string, MealPlanSlotItemRow[]>();
+
+  for (const item of (itemData ?? []) as MealPlanSlotItemRow[]) {
+    const currentItems = itemsBySlotId.get(item.slot_id) ?? [];
+    currentItems.push(item);
+    itemsBySlotId.set(item.slot_id, currentItems);
+  }
+
+  return slotRows.flatMap((slot) => {
+    const mealType = assertMealTypeValue(slot.meal_type);
+    const persistedItems = itemsBySlotId.get(slot.id) ?? [];
+
+    if (persistedItems.length === 0) {
+      return [
+        {
+          slotId: slot.id,
+          slotItemKey: buildWeeklyMenuSlotItemLineageKey({
+            slotId: slot.id,
+            dayIndex: slot.day_index,
+            mealType,
+            dishId: slot.dish_id,
+            sortOrder: 0,
+          }),
+          mealPlanId: slot.meal_plan_id,
+          dayIndex: slot.day_index,
+          mealType,
+          dishId: slot.dish_id,
+        },
+      ];
+    }
+
+    return persistedItems.map((item) => ({
+      slotId: slot.id,
+      slotItemKey: buildWeeklyMenuSlotItemLineageKey({
+        slotItemId: item.id,
+        slotId: slot.id,
+        dayIndex: slot.day_index,
+        mealType,
+        dishId: item.dish_id,
+        sortOrder: item.sort_order,
+      }),
+      mealPlanId: slot.meal_plan_id,
+      dayIndex: slot.day_index,
+      mealType,
+      dishId: item.dish_id,
+    }));
+  });
 }
 
 async function fetchDishIngredientsByDishIds(dishIds: string[]) {
@@ -484,6 +587,7 @@ function buildSlotContributionDrafts(args: {
       mealPlanId: args.mealPlanId,
       dayIndex: args.slot.dayIndex,
       mealType: args.slot.mealType,
+      slotItemKey: args.slot.slotItemKey,
       productId: resolvedIdentity.productId,
       normalizedName: resolvedIdentity.normalizedName,
       unit: ingredient.unit,
@@ -503,6 +607,7 @@ function buildSlotContributionDrafts(args: {
     groupedContributions.set(contributionKey, {
       contributionKey,
       sourceKey,
+      slotItemKey: args.slot.slotItemKey,
       dayIndex: args.slot.dayIndex,
       mealType: args.slot.mealType,
       dishId: args.slot.dishId,
@@ -534,6 +639,22 @@ async function fetchContributionRowsForShoppingList(shoppingListId: string) {
     ...row,
     meal_type: assertMealTypeValue(row.meal_type),
   }));
+}
+
+async function hasLegacyContributionIdentityRows(shoppingListId: string) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("shopping_list_item_contributions")
+    .select("contribution_key")
+    .eq("shopping_list_id", shoppingListId);
+
+  if (error) {
+    throw error;
+  }
+
+  return ((data ?? []) as Array<{ contribution_key: string }>).some(
+    (row) => !isSlotItemAwareContributionKey(row.contribution_key),
+  );
 }
 
 async function fetchAutoItemRows(shoppingListId: string, sourceKeys: string[]) {
@@ -884,18 +1005,66 @@ export async function syncCurrentWeekShoppingList(scope: SyncScope = { type: "fu
 
 export async function syncShoppingListsForDish(dishId: string) {
   const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("meal_plan_slots")
-    .select("meal_plan_id, day_index, meal_type")
-    .eq("dish_id", dishId);
+  const [
+    { data: slotData, error: slotError },
+    { data: initialItemData, error: itemError },
+  ] =
+    await Promise.all([
+      supabase
+        .from("meal_plan_slots")
+        .select("meal_plan_id, day_index, meal_type")
+        .eq("dish_id", dishId),
+      supabase
+        .from("meal_plan_slot_items")
+        .select("meal_plan_slots!inner(meal_plan_id, day_index, meal_type)")
+        .eq("dish_id", dishId),
+    ]);
+  let itemData = initialItemData;
 
-  if (error) {
-    throw error;
+  if (slotError) {
+    throw slotError;
+  }
+
+  if (itemError) {
+    if (isMissingSlotItemStorageError(itemError)) {
+      itemData = [];
+    } else {
+      throw itemError;
+    }
   }
 
   const slotsByMealPlanId = new Map<string, ShoppingListSlotCoordinate[]>();
 
-  for (const slot of (data ?? []) as MealPlanSlotRow[]) {
+  for (const slot of (slotData ?? []) as MealPlanSlotRow[]) {
+    const mealType = assertMealTypeValue(slot.meal_type);
+    const currentSlots = slotsByMealPlanId.get(slot.meal_plan_id) ?? [];
+    currentSlots.push({
+      dayIndex: slot.day_index,
+      mealType,
+    });
+    slotsByMealPlanId.set(slot.meal_plan_id, currentSlots);
+  }
+
+  for (const item of (itemData ?? []) as Array<{
+    meal_plan_slots:
+      | {
+          meal_plan_id: string;
+          day_index: number;
+          meal_type: string;
+        }
+      | Array<{
+          meal_plan_id: string;
+          day_index: number;
+          meal_type: string;
+        }>;
+  }>) {
+    const slot = Array.isArray(item.meal_plan_slots)
+      ? item.meal_plan_slots[0]
+      : item.meal_plan_slots;
+
+    if (!slot) {
+      continue;
+    }
     const mealType = assertMealTypeValue(slot.meal_type);
     const currentSlots = slotsByMealPlanId.get(slot.meal_plan_id) ?? [];
     currentSlots.push({
@@ -923,7 +1092,11 @@ export async function ensureCurrentWeekShoppingListFresh() {
 
   const shoppingList = await fetchShoppingListByMealPlanId(mealPlan.id);
 
-  if (isShoppingListStale(shoppingList)) {
+  const needsCompatibilityRefresh = shoppingList
+    ? await hasLegacyContributionIdentityRows(shoppingList.id)
+    : false;
+
+  if (isShoppingListStale(shoppingList) || needsCompatibilityRefresh) {
     await syncShoppingListByMealPlanId(mealPlan.id, { type: "full" });
   }
 

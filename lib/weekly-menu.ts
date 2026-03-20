@@ -11,18 +11,44 @@ export const mealTypeValues = ["breakfast", "lunch", "dinner"] as const;
 
 export type MealType = (typeof mealTypeValues)[number];
 
+export type WeeklyMenuSlotCoordinate = {
+  dayIndex: number;
+  mealType: MealType;
+};
+
+export const weeklyMenuMutationErrorCodes = [
+  "duplicate_dish_in_slot",
+  "slot_item_not_found",
+  "slot_not_found",
+  "dish_not_available",
+] as const;
+
+export type WeeklyMenuMutationErrorCode =
+  (typeof weeklyMenuMutationErrorCodes)[number];
+
+export class WeeklyMenuMutationError extends Error {
+  code: WeeklyMenuMutationErrorCode;
+
+  constructor(code: WeeklyMenuMutationErrorCode) {
+    super(code);
+    this.name = "WeeklyMenuMutationError";
+    this.code = code;
+  }
+}
+
 export type WeeklyMenuDishOption = {
   id: string;
   name: string;
   category: DishCategory;
 };
 
-export type WeeklyMenuSlotRecord = {
-  dayIndex: number;
-  mealType: MealType;
+export type WeeklyMenuSlotItemRecord = {
+  id: string;
+  slotId?: string;
   dishId: string;
-  dishName: string;
+  sortOrder: number;
   isArchivedDish: boolean;
+  dishName: string;
   dishDetails?: WeeklyMenuSlotDishDetails;
 };
 
@@ -43,9 +69,26 @@ export type WeeklyMenuSlotDishDetails = {
   isArchived: boolean;
 };
 
+export type WeeklyMenuSlotRecord = WeeklyMenuSlotCoordinate & {
+  id?: string;
+  items: WeeklyMenuSlotItemRecord[];
+};
+
+export type WeeklyMenuSlotItemView = {
+  id: string;
+  dishId: string;
+  order: number;
+  isArchivedDish: boolean;
+  dishName: string;
+  dishDetails?: WeeklyMenuSlotDishDetails;
+};
+
 export type WeeklyMenuSlotView = {
+  id?: string;
   mealType: MealType;
   mealLabel: string;
+  items: WeeklyMenuSlotItemView[];
+  hasArchivedItems: boolean;
   dishId?: string;
   dishName?: string;
   isArchivedDish: boolean;
@@ -134,6 +177,137 @@ export function getMealTypeLabel(
   return getTranslation(locale, mealTypeTranslationKeys[mealType]);
 }
 
+export function getWeeklyMenuSlotCoordinateKey({
+  dayIndex,
+  mealType,
+}: WeeklyMenuSlotCoordinate) {
+  return `${dayIndex}:${mealType}`;
+}
+
+export function buildWeeklyMenuCompatibilitySlotItemId({
+  slotId,
+  dayIndex,
+  mealType,
+  dishId,
+  sortOrder,
+}: WeeklyMenuSlotCoordinate & {
+  slotId?: string;
+  dishId: string;
+  sortOrder: number;
+}) {
+  if (slotId) {
+    return `slot:${slotId}:item:${sortOrder}`;
+  }
+
+  return [
+    "compat-slot-item",
+    `day:${dayIndex}`,
+    `meal:${mealType}`,
+    `dish:${dishId}`,
+    `order:${sortOrder}`,
+  ].join("|");
+}
+
+export function buildWeeklyMenuSlotItemLineageKey(args: {
+  slotItemId?: string;
+  slotId?: string;
+  dayIndex: number;
+  mealType: MealType;
+  dishId: string;
+  sortOrder: number;
+}) {
+  if (args.slotItemId) {
+    return args.slotItemId;
+  }
+
+  return buildWeeklyMenuCompatibilitySlotItemId(args);
+}
+
+function sortWeeklyMenuSlotItems(items: WeeklyMenuSlotItemRecord[]) {
+  return [...items].sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) {
+      return left.sortOrder - right.sortOrder;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
+export function hasWeeklyMenuSlotDuplicateDishIds(
+  items: Pick<WeeklyMenuSlotItemRecord, "dishId">[],
+) {
+  const seenDishIds = new Set<string>();
+
+  for (const item of items) {
+    if (seenDishIds.has(item.dishId)) {
+      return true;
+    }
+
+    seenDishIds.add(item.dishId);
+  }
+
+  return false;
+}
+
+export function getWeeklyMenuSlotPrimaryItem<
+  TSlot extends {
+    items: readonly WeeklyMenuSlotItemRecord[] | readonly WeeklyMenuSlotItemView[];
+  },
+>(slot: TSlot) {
+  return slot.items[0];
+}
+
+export function buildWeeklyMenuSlotRecord(args: {
+  slotId?: string;
+  dayIndex: number;
+  mealType: MealType;
+  items: WeeklyMenuSlotItemRecord[];
+}) {
+  return {
+    id: args.slotId,
+    dayIndex: args.dayIndex,
+    mealType: args.mealType,
+    items: sortWeeklyMenuSlotItems(args.items),
+  } satisfies WeeklyMenuSlotRecord;
+}
+
+export function buildWeeklyMenuCompatibilitySlotRecordFromSingleDish(args: {
+  slotId?: string;
+  dayIndex: number;
+  mealType: MealType;
+  dishId: string;
+  dishName: string;
+  isArchivedDish: boolean;
+  dishDetails?: WeeklyMenuSlotDishDetails;
+}) {
+  const itemId = buildWeeklyMenuCompatibilitySlotItemId({
+    slotId: args.slotId,
+    dayIndex: args.dayIndex,
+    mealType: args.mealType,
+    dishId: args.dishId,
+    sortOrder: 0,
+  });
+
+  return {
+    ...buildWeeklyMenuSlotRecord({
+      slotId: args.slotId,
+      dayIndex: args.dayIndex,
+      mealType: args.mealType,
+      items: [
+        {
+          id: itemId,
+          slotId: args.slotId,
+          dishId: args.dishId,
+          sortOrder: 0,
+          dishName: args.dishName,
+          isArchivedDish: args.isArchivedDish,
+          dishDetails: args.dishDetails,
+        },
+      ],
+    }),
+  } satisfies WeeklyMenuSlotRecord;
+}
+
 export function isMealType(value: string): value is MealType {
   return mealTypeValues.includes(value as MealType);
 }
@@ -180,22 +354,48 @@ export function buildWeeklyMenuView({
   const formatters = getDateFormatters(locale);
   const todayKey = formatDateKey(new Date());
   const slotsByKey = new Map(
-    slots.map((slot) => [`${slot.dayIndex}:${slot.mealType}`, slot] as const),
+    slots.map((slot) => [
+      getWeeklyMenuSlotCoordinateKey(slot),
+      {
+        ...slot,
+        items: sortWeeklyMenuSlotItems(slot.items),
+      },
+    ]),
   );
 
   const days = Array.from({ length: 7 }, (_, dayIndex) => {
     const date = addDays(weekRange.start, dayIndex);
     const isoDate = formatDateKey(date);
     const daySlots = mealTypeValues.map((mealType) => {
-      const slot = slotsByKey.get(`${dayIndex}:${mealType}`);
+      const slot = slotsByKey.get(
+        getWeeklyMenuSlotCoordinateKey({
+          dayIndex,
+          mealType,
+        }),
+      );
+      const items =
+        slot?.items.map((item) => ({
+          id: item.id,
+          dishId: item.dishId,
+          order: item.sortOrder,
+          dishName: item.dishName,
+          isArchivedDish: item.isArchivedDish,
+          dishDetails: item.dishDetails,
+        })) ?? [];
+      const primaryItem = getWeeklyMenuSlotPrimaryItem({
+        items,
+      });
 
       return {
+        id: slot?.id,
         mealType,
         mealLabel: getMealTypeLabel(mealType, locale),
-        dishId: slot?.dishId,
-        dishName: slot?.dishName,
-        isArchivedDish: slot?.isArchivedDish ?? false,
-        dishDetails: slot?.dishDetails,
+        items,
+        hasArchivedItems: items.some((item) => item.isArchivedDish),
+        dishId: primaryItem?.dishId,
+        dishName: primaryItem?.dishName,
+        isArchivedDish: primaryItem?.isArchivedDish ?? false,
+        dishDetails: primaryItem?.dishDetails,
       } satisfies WeeklyMenuSlotView;
     });
 
@@ -207,7 +407,7 @@ export function buildWeeklyMenuView({
       dateNumber: formatters.day.format(date),
       isoDate,
       isToday: isoDate === todayKey,
-      filledMeals: daySlots.filter((slot) => Boolean(slot.dishId)).length,
+      filledMeals: daySlots.filter((slot) => slot.items.length > 0).length,
       slots: daySlots,
     } satisfies WeeklyMenuDayView;
   });
@@ -233,4 +433,10 @@ export function buildEmptyWeeklyMenuView(
     slots: [],
     locale,
   });
+}
+
+export function isWeeklyMenuMutationError(
+  error: unknown,
+): error is WeeklyMenuMutationError {
+  return error instanceof WeeklyMenuMutationError;
 }

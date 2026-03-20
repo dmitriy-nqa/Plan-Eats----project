@@ -2,6 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 
+import { isWeeklyMenuMutationError } from "@/lib/weekly-menu";
+
+export type WeeklyMenuSlotMutationResult =
+  | {
+      status: "success";
+      slotIsEmpty?: boolean;
+    }
+  | {
+      status: "error";
+      code: "duplicate_dish_in_slot" | "slot_item_not_found" | "slot_not_found" | "failed";
+    };
+
 function readText(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
@@ -18,6 +30,30 @@ function readDayIndex(formData: FormData) {
   return parsedValue;
 }
 
+function revalidateWeeklyMenuPaths() {
+  revalidatePath("/");
+  revalidatePath("/products");
+}
+
+function mapWeeklyMenuActionError(error: unknown): WeeklyMenuSlotMutationResult {
+  if (isWeeklyMenuMutationError(error)) {
+    return {
+      status: "error",
+      code:
+        error.code === "dish_not_available"
+          ? "failed"
+          : error.code,
+    };
+  }
+
+  console.error("Weekly menu slot mutation failed", error);
+
+  return {
+    status: "error",
+    code: "failed",
+  };
+}
+
 export async function assignWeeklySlotAction(formData: FormData) {
   const { assignDishToCurrentWeekSlot } = await import("@/lib/weekly-menu-crud");
 
@@ -27,8 +63,7 @@ export async function assignWeeklySlotAction(formData: FormData) {
     dishId: readText(formData, "dishId"),
   });
 
-  revalidatePath("/");
-  revalidatePath("/products");
+  revalidateWeeklyMenuPaths();
 }
 
 export async function clearWeeklySlotAction(formData: FormData) {
@@ -39,6 +74,73 @@ export async function clearWeeklySlotAction(formData: FormData) {
     mealType: readText(formData, "mealType"),
   });
 
-  revalidatePath("/");
-  revalidatePath("/products");
+  revalidateWeeklyMenuPaths();
+}
+
+export async function addWeeklySlotDishAction(
+  formData: FormData,
+): Promise<WeeklyMenuSlotMutationResult> {
+  try {
+    const { addDishToCurrentWeekSlot } = await import("@/lib/weekly-menu-crud");
+
+    await addDishToCurrentWeekSlot({
+      dayIndex: readDayIndex(formData),
+      mealType: readText(formData, "mealType"),
+      dishId: readText(formData, "dishId"),
+    });
+
+    revalidateWeeklyMenuPaths();
+
+    return {
+      status: "success",
+    };
+  } catch (error) {
+    return mapWeeklyMenuActionError(error);
+  }
+}
+
+export async function replaceWeeklySlotItemAction(
+  formData: FormData,
+): Promise<WeeklyMenuSlotMutationResult> {
+  try {
+    const { replaceCurrentWeekSlotItemDish } = await import("@/lib/weekly-menu-crud");
+
+    await replaceCurrentWeekSlotItemDish({
+      dayIndex: readDayIndex(formData),
+      mealType: readText(formData, "mealType"),
+      slotItemId: readText(formData, "slotItemId"),
+      dishId: readText(formData, "dishId"),
+    });
+
+    revalidateWeeklyMenuPaths();
+
+    return {
+      status: "success",
+    };
+  } catch (error) {
+    return mapWeeklyMenuActionError(error);
+  }
+}
+
+export async function removeWeeklySlotItemAction(
+  formData: FormData,
+): Promise<WeeklyMenuSlotMutationResult> {
+  try {
+    const { removeCurrentWeekSlotItem } = await import("@/lib/weekly-menu-crud");
+
+    const result = await removeCurrentWeekSlotItem({
+      dayIndex: readDayIndex(formData),
+      mealType: readText(formData, "mealType"),
+      slotItemId: readText(formData, "slotItemId"),
+    });
+
+    revalidateWeeklyMenuPaths();
+
+    return {
+      status: "success",
+      slotIsEmpty: result.slotIsEmpty,
+    };
+  } catch (error) {
+    return mapWeeklyMenuActionError(error);
+  }
 }
