@@ -79,7 +79,7 @@ export const ruMessages: TranslationMessages = {
       eyebrow: "Главный экран",
       title: "Меню на неделю",
       description:
-        "Нажмите на пустой слот, чтобы выбрать блюдо. Нажмите на заполненный слот, чтобы открыть детали блюда перед готовкой, а затем при необходимости заменить его или очистить слот.",
+        "Нажмите на любой слот, чтобы открыть его состав, посмотреть блюда и спокойно поправить план, не перегружая недельный экран.",
     },
     hero: {
       title: "Текущая семейная неделя",
@@ -91,8 +91,8 @@ export const ruMessages: TranslationMessages = {
       description: "Нажмите на день, чтобы переключить активный план ниже.",
     },
     day: {
-      noMealsAssigned: "Блюда еще не выбраны.",
-      mealsAssigned: "Назначено {filled} из {total} приемов пищи.",
+      noMealsAssigned: "Блюда ещё не выбраны.",
+      mealsAssigned: "Назначено {filled} из {total} приёмов пищи.",
       today: "Сегодня",
     },
     slot: {
@@ -100,17 +100,29 @@ export const ruMessages: TranslationMessages = {
       pick: "Выбрать",
       archived: "В архиве",
     },
+    slotFlow: {
+      eyebrow: "Слот",
+      emptyTitle: "Этот приём пищи пока пустой",
+      emptyDescription: "Сначала добавьте одно блюдо, а потом при необходимости дополняйте слот дальше.",
+      addFirst: "Добавить первое блюдо",
+      addMore: "Добавить ещё блюда",
+      remove: "Убрать",
+      removeConfirm: "Убрать это блюдо из {mealLabel} на {dayLabel}, {dateLabel}?",
+      backToSlot: "Назад к слоту",
+      alreadyInSlot: "Уже в этом слоте",
+      duplicateNotice: "Это блюдо уже есть в слоте.",
+      actionFailed: "Сейчас не удалось обновить слот. Попробуйте ещё раз.",
+    },
     picker: {
       eyebrow: "Выбор блюда",
       replaceEyebrow: "Заменить блюдо",
-      backToDetails: "Назад к деталям",
+      backToDetails: "Назад к слоту",
       searchLabel: "Поиск блюд",
       searchPlaceholder: "Поиск блюд",
       summaryFallback: "Пока нет короткого описания.",
       empty: {
         title: "Пока нет блюд для выбора",
-        description:
-          "Добавьте первое семейное блюдо, затем вернитесь сюда и назначьте его на эту неделю.",
+        description: "Добавьте первое семейное блюдо, затем вернитесь сюда и назначьте его на эту неделю.",
         cta: "Добавить блюдо",
       },
       noResults: {
@@ -131,7 +143,7 @@ export const ruMessages: TranslationMessages = {
       unavailable: {
         title: "Детали блюда недоступны",
         description:
-          "Этот слот все еще связан с блюдом, но его детали не удалось загрузить. Вы можете заменить блюдо или очистить слот.",
+          "Этот слот всё ещё связан с блюдом, но его детали не удалось загрузить. Вы можете заменить блюдо или очистить слот.",
       },
       replace: "Заменить",
       confirmClear: "Очистить {mealLabel} на {dayLabel}, {dateLabel}?",
@@ -152,8 +164,8 @@ export const ruMessages: TranslationMessages = {
     productsBridge: {
       title: "Products",
       emptyPlan:
-        "Products собирается из блюд недели и остаётся под рукой для отдельных покупок.",
-      noItems: "Products собирается из блюд этой недели.",
+        "Products собирается из блюд недели и остаётся готовым для отдельных покупок тоже.",
+      noItems: "Products собирает блюда этой недели.",
       ready: "Покупки на эту неделю уже собраны.",
     },
     status: {

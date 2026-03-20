@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -14,13 +15,30 @@ import {
   getShoppingListCopy,
 } from "@/lib/shopping-list-copy";
 import type { CurrentWeekShoppingListSummary } from "@/lib/shopping-list-crud";
-import type {
-  MealType,
-  WeeklyMenuDayView,
-  WeeklyMenuSlotDishDetails,
-  WeeklyMenuSlotView,
-  WeeklyMenuView,
+import {
+  getWeeklyMenuSlotPrimaryItem,
+  type MealType,
+  type WeeklyMenuDayView,
+  type WeeklyMenuSlotDishDetails,
+  type WeeklyMenuSlotItemView,
+  type WeeklyMenuSlotView,
+  type WeeklyMenuView,
 } from "@/lib/weekly-menu";
+
+type WeeklyMenuSlotMutationResult =
+  | {
+      status: "success";
+      slotIsEmpty?: boolean;
+    }
+  | {
+      status: "error";
+      code: "duplicate_dish_in_slot" | "slot_item_not_found" | "slot_not_found" | "failed";
+    };
+
+type WeeklyMenuSlotMutationErrorCode = Extract<
+  WeeklyMenuSlotMutationResult,
+  { status: "error" }
+>["code"];
 
 const twoLineClampStyle = {
   display: "-webkit-box",
@@ -148,7 +166,10 @@ function SlotButton({
   pickLabel: string;
   archivedLabel: string;
 }) {
-  const isFilled = Boolean(slot.dishId);
+  const primaryItem = getWeeklyMenuSlotPrimaryItem(slot);
+  const isFilled = slot.items.length > 0;
+  const visibleItemNames = slot.items.slice(0, 2).map((item) => item.dishName);
+  const overflowCount = Math.max(slot.items.length - visibleItemNames.length, 0);
 
   return (
     <button
@@ -165,19 +186,41 @@ function SlotButton({
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cocoa">
           {slot.mealLabel}
         </p>
-        <p
-          className={[
-            "mt-1 break-words pr-1 text-sm leading-5",
-            isFilled ? "font-semibold text-ink" : "text-cocoa",
-          ].join(" ")}
-          style={twoLineClampStyle}
-        >
-          {slot.dishName ?? chooseDishLabel}
-        </p>
+        {!isFilled ? (
+          <p
+            className="mt-1 break-words pr-1 text-sm leading-5 text-cocoa"
+            style={twoLineClampStyle}
+          >
+            {chooseDishLabel}
+          </p>
+        ) : visibleItemNames.length === 1 ? (
+          <p
+            className="mt-1 break-words pr-1 text-sm font-semibold leading-5 text-ink"
+            style={twoLineClampStyle}
+          >
+            {primaryItem?.dishName}
+          </p>
+        ) : (
+          <div className="mt-1 space-y-1 pr-1">
+            {visibleItemNames.map((itemName, index) => (
+              <p
+                key={`${slot.mealType}-summary-${index + 1}`}
+                className="break-words text-sm font-semibold leading-5 text-ink"
+              >
+                {itemName}
+              </p>
+            ))}
+            {overflowCount > 0 ? (
+              <p className="text-xs font-semibold leading-5 text-cocoa">
+                +{overflowCount} more
+              </p>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <div className="ml-3 flex shrink-0 items-center gap-2">
-        {slot.isArchivedDish ? (
+        {slot.hasArchivedItems ? (
           <span className="rounded-full bg-sand px-3 py-1 text-[11px] font-semibold text-cocoa">
             {archivedLabel}
           </span>
@@ -411,7 +454,7 @@ function SlotSheetHeader({
           <span className="rounded-full bg-blush px-3 py-1 text-xs font-semibold text-ink">
             {slot.mealLabel}
           </span>
-          {slot.isArchivedDish ? (
+          {slot.hasArchivedItems ? (
             <span className="rounded-full bg-sand px-3 py-1 text-xs font-semibold text-cocoa">
               {archivedDishLabel}
             </span>
@@ -546,13 +589,14 @@ function DishDetailsSheet({
   locale: AppLocale;
 }) {
   const t = useT();
-  const dishDetails = slot.dishDetails;
+  const primaryItem = getWeeklyMenuSlotPrimaryItem(slot);
+  const dishDetails = primaryItem?.dishDetails;
   const dishTitle =
-    dishDetails?.name ?? slot.dishName ?? t("weeklyMenu.details.fallbackTitle");
+    dishDetails?.name ?? primaryItem?.dishName ?? t("weeklyMenu.details.fallbackTitle");
   const showCategory = dishDetails
     ? getDishCategoryLabel(dishDetails.category, locale)
     : null;
-  const showArchivedBadge = dishDetails?.isArchived ?? slot.isArchivedDish;
+  const showArchivedBadge = dishDetails?.isArchived ?? primaryItem?.isArchivedDish ?? false;
   const { practicalNote, supplementaryNote } = getDishNotePresentation(
     dishDetails?.comment,
   );
@@ -735,7 +779,7 @@ function DishPicker({
     >
       <SlotSheetHeader
         eyebrow={
-          slot.dishId
+          slot.items.length > 0
             ? t("weeklyMenu.picker.replaceEyebrow")
             : t("weeklyMenu.picker.eyebrow")
         }
@@ -832,11 +876,471 @@ function DishPicker({
   );
 }
 
+function SlotFlowNotice({ message }: { message: string | null }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <SurfaceCard className="mt-4 border-clay/15 bg-white/85">
+      <p className="text-sm leading-6 text-cocoa">{message}</p>
+    </SurfaceCard>
+  );
+}
+
+function SlotOverviewPanel({
+  day,
+  slot,
+  onOpenDetails,
+  onAdd,
+  onReplace,
+  onRemove,
+  onClose,
+  feedbackMessage,
+  isPending,
+  locale,
+}: {
+  day: WeeklyMenuDayView;
+  slot: WeeklyMenuSlotView;
+  onOpenDetails: (slotItemId: string) => void;
+  onAdd: () => void;
+  onReplace: (slotItemId: string) => void;
+  onRemove: (slotItemId: string) => void;
+  onClose: () => void;
+  feedbackMessage: string | null;
+  isPending: boolean;
+  locale: AppLocale;
+}) {
+  const t = useT();
+  const hasItems = slot.items.length > 0;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SlotSheetHeader
+        eyebrow={t("weeklyMenu.slotFlow.eyebrow")}
+        day={day}
+        slot={slot}
+        onClose={onClose}
+        closeLabel={t("common.actions.close")}
+        archivedDishLabel={t("weeklyMenu.details.archived")}
+      />
+
+      <SlotFlowNotice message={feedbackMessage} />
+
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1">
+        {!hasItems ? (
+          <SurfaceCard className="bg-white/88">
+            <p className="text-sm font-semibold text-ink">
+              {t("weeklyMenu.slotFlow.emptyTitle")}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-cocoa">
+              {t("weeklyMenu.slotFlow.emptyDescription")}
+            </p>
+          </SurfaceCard>
+        ) : (
+          <div className="space-y-3">
+            {slot.items.map((item, index) => {
+              const categoryLabel = item.dishDetails
+                ? getDishCategoryLabel(item.dishDetails.category, locale)
+                : null;
+
+              return (
+                <SurfaceCard key={item.id} className="bg-white/90">
+                  <button
+                    type="button"
+                    onClick={() => onOpenDetails(item.id)}
+                    disabled={isPending}
+                    className="w-full text-left disabled:opacity-70"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-clay">
+                          {slot.mealLabel} {index + 1}
+                        </p>
+                        <p className="mt-1 break-words text-sm font-semibold leading-5 text-ink">
+                          {item.dishName}
+                        </p>
+                        {categoryLabel ? (
+                          <p className="mt-1 text-xs font-medium text-cocoa">
+                            {categoryLabel}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <span className="inline-flex items-center text-cocoa/70">
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 16 16"
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M6 4.5 9.5 8 6 11.5" />
+                        </svg>
+                      </span>
+                    </div>
+                  </button>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onReplace(item.id)}
+                      disabled={isPending}
+                      className="rounded-2xl border border-clay/20 bg-sand/55 px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
+                    >
+                      {t("weeklyMenu.details.replace")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemove(item.id)}
+                      disabled={isPending}
+                      className="rounded-2xl border border-clay/25 bg-white px-4 py-3 text-sm font-semibold text-clay disabled:opacity-60"
+                    >
+                      {t("weeklyMenu.slotFlow.remove")}
+                    </button>
+                  </div>
+                </SurfaceCard>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="shrink-0 border-t border-white/70 bg-paper-glow/95 pt-3 backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={isPending}
+          className="w-full rounded-[1.4rem] bg-clay px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+        >
+          {hasItems ? t("weeklyMenu.slotFlow.addMore") : t("weeklyMenu.slotFlow.addFirst")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SlotItemDetailsPanel({
+  day,
+  slot,
+  slotItem,
+  onBack,
+  onReplace,
+  onRemove,
+  onClose,
+  isPending,
+  locale,
+}: {
+  day: WeeklyMenuDayView;
+  slot: WeeklyMenuSlotView;
+  slotItem: WeeklyMenuSlotItemView;
+  onBack: () => void;
+  onReplace: () => void;
+  onRemove: () => void;
+  onClose: () => void;
+  isPending: boolean;
+  locale: AppLocale;
+}) {
+  const t = useT();
+  const dishDetails = slotItem.dishDetails;
+  const dishTitle =
+    dishDetails?.name ?? slotItem.dishName ?? t("weeklyMenu.details.fallbackTitle");
+  const showCategory = dishDetails
+    ? getDishCategoryLabel(dishDetails.category, locale)
+    : null;
+  const showArchivedBadge = dishDetails?.isArchived ?? slotItem.isArchivedDish;
+  const { practicalNote, supplementaryNote } = getDishNotePresentation(
+    dishDetails?.comment,
+  );
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SlotSheetHeader
+        eyebrow={t("weeklyMenu.details.title")}
+        day={day}
+        slot={slot}
+        onClose={onClose}
+        closeLabel={t("common.actions.close")}
+        archivedDishLabel={t("weeklyMenu.details.archived")}
+      />
+
+      <button
+        type="button"
+        onClick={onBack}
+        disabled={isPending}
+        className="mt-4 self-start rounded-full bg-white px-4 py-2 text-xs font-semibold text-cocoa shadow-sm disabled:opacity-60"
+      >
+        {t("weeklyMenu.slotFlow.backToSlot")}
+      </button>
+
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1">
+        <div className="space-y-3">
+          <SurfaceCard className="bg-white/88">
+            <h2 className="break-words font-[var(--font-heading)] text-3xl font-semibold leading-none text-ink">
+              {dishTitle}
+            </h2>
+            {(showCategory || showArchivedBadge) ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {showCategory ? <MetadataBadge>{showCategory}</MetadataBadge> : null}
+                {showArchivedBadge ? (
+                  <MetadataBadge>{t("weeklyMenu.details.archived")}</MetadataBadge>
+                ) : null}
+              </div>
+            ) : null}
+          </SurfaceCard>
+
+          {dishDetails ? (
+            <>
+              {practicalNote ? (
+                <SurfaceCard className="border-leaf/20 bg-leaf/10">
+                  <p className="text-sm font-semibold text-ink">
+                    {t("weeklyMenu.details.cookNote")}
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-cocoa">
+                    {practicalNote}
+                  </p>
+                </SurfaceCard>
+              ) : null}
+
+              <DetailSection
+                title={t("weeklyMenu.details.ingredients")}
+                className="bg-white/92"
+              >
+                <IngredientsList
+                  ingredients={dishDetails.ingredients}
+                  emptyText={t("weeklyMenu.details.noIngredients")}
+                />
+              </DetailSection>
+
+              {dishDetails.recipeText ? (
+                <DetailSection title={t("weeklyMenu.details.howToCook")}>
+                  <RecipeBlock
+                    recipeText={dishDetails.recipeText}
+                    emptyText={t("weeklyMenu.details.noCookingSteps")}
+                  />
+                </DetailSection>
+              ) : null}
+
+              {supplementaryNote ? (
+                <DetailSection title={t("weeklyMenu.details.notes")}>
+                  <p className="whitespace-pre-wrap break-words text-sm leading-6 text-cocoa">
+                    {supplementaryNote}
+                  </p>
+                </DetailSection>
+              ) : null}
+            </>
+          ) : (
+            <SurfaceCard className="bg-white/85">
+              <p className="text-sm font-semibold text-ink">
+                {t("weeklyMenu.details.unavailable.title")}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-cocoa">
+                {t("weeklyMenu.details.unavailable.description")}
+              </p>
+            </SurfaceCard>
+          )}
+        </div>
+      </div>
+
+      <div className="shrink-0 border-t border-white/70 bg-paper-glow/95 pt-3 backdrop-blur-sm">
+        <div className="rounded-[1.4rem] bg-white/88 p-3 shadow-sm">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onReplace}
+              disabled={isPending}
+              className="rounded-2xl border border-clay/20 bg-sand/55 px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
+            >
+              {t("weeklyMenu.details.replace")}
+            </button>
+
+            <button
+              type="button"
+              onClick={onRemove}
+              disabled={isPending}
+              className="rounded-2xl border border-clay/25 bg-white px-4 py-3 text-sm font-semibold text-clay disabled:opacity-60"
+            >
+              {t("weeklyMenu.slotFlow.remove")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SlotDishPickerPanel({
+  day,
+  slot,
+  dishes,
+  replaceTargetItemId,
+  onBack,
+  onClose,
+  onSelectDish,
+  feedbackMessage,
+  isPending,
+  locale,
+}: {
+  day: WeeklyMenuDayView;
+  slot: WeeklyMenuSlotView;
+  dishes: DishSummary[];
+  replaceTargetItemId?: string;
+  onBack: () => void;
+  onClose: () => void;
+  onSelectDish: (dishId: string) => void;
+  feedbackMessage: string | null;
+  isPending: boolean;
+  locale: AppLocale;
+}) {
+  const t = useT();
+  const [query, setQuery] = useState("");
+  const blockedDishIds = new Set(
+    slot.items
+      .filter((item) => item.id !== replaceTargetItemId)
+      .map((item) => item.dishId),
+  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredDishes = dishes.filter((dish) => {
+    if (!normalizedQuery) {
+      return true;
+    }
+
+    return [dish.name, getDishCategoryLabel(dish.category, locale), dish.summary]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SlotSheetHeader
+        eyebrow={
+          replaceTargetItemId
+            ? t("weeklyMenu.picker.replaceEyebrow")
+            : t("weeklyMenu.picker.eyebrow")
+        }
+        day={day}
+        slot={slot}
+        onClose={onClose}
+        closeLabel={t("common.actions.close")}
+        archivedDishLabel={t("weeklyMenu.details.archived")}
+      />
+
+      <button
+        type="button"
+        onClick={onBack}
+        disabled={isPending}
+        className="mt-4 self-start rounded-full bg-white px-4 py-2 text-xs font-semibold text-cocoa shadow-sm disabled:opacity-60"
+      >
+        {t("weeklyMenu.slotFlow.backToSlot")}
+      </button>
+
+      <SlotFlowNotice message={feedbackMessage} />
+
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1 pr-1">
+        {dishes.length > 0 ? (
+          <label className="block">
+            <span className="sr-only">{t("weeklyMenu.picker.searchLabel")}</span>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("weeklyMenu.picker.searchPlaceholder")}
+              className="w-full rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-cocoa/55"
+            />
+          </label>
+        ) : null}
+
+        {dishes.length === 0 ? (
+          <SurfaceCard className="mt-4 bg-white/85">
+            <p className="text-sm font-semibold text-ink">
+              {t("weeklyMenu.picker.empty.title")}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-cocoa">
+              {t("weeklyMenu.picker.empty.description")}
+            </p>
+            <Link
+              href="/dishes/new"
+              className="mt-4 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
+            >
+              {t("weeklyMenu.picker.empty.cta")}
+            </Link>
+          </SurfaceCard>
+        ) : null}
+
+        {dishes.length > 0 && filteredDishes.length === 0 ? (
+          <SurfaceCard className="mt-4 bg-white/85">
+            <p className="text-sm font-semibold text-ink">
+              {t("weeklyMenu.picker.noResults.title")}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-cocoa">
+              {t("weeklyMenu.picker.noResults.description")}
+            </p>
+          </SurfaceCard>
+        ) : null}
+
+        {filteredDishes.length > 0 ? (
+          <div className="mt-4 space-y-3">
+            {filteredDishes.map((dish) => {
+              const isDuplicate = blockedDishIds.has(dish.id);
+
+              return (
+                <button
+                  key={dish.id}
+                  type="button"
+                  onClick={() => onSelectDish(dish.id)}
+                  disabled={isDuplicate || isPending}
+                  className={[
+                    "w-full rounded-[1.4rem] border px-4 py-3 text-left shadow-sm transition",
+                    isDuplicate
+                      ? "border-sand/80 bg-sand/45 text-cocoa/85"
+                      : "border-white/80 bg-white/90 hover:bg-white",
+                    isPending ? "opacity-70" : "",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words text-sm font-semibold leading-5 text-ink">
+                        {dish.name}
+                      </p>
+                      <p className="mt-1 text-xs font-medium text-clay">
+                        {getDishCategoryLabel(dish.category, locale)}
+                      </p>
+                    </div>
+                    {isDuplicate ? (
+                      <span className="rounded-full bg-white/85 px-3 py-1 text-[11px] font-semibold text-cocoa shadow-sm">
+                        {t("weeklyMenu.slotFlow.alreadyInSlot")}
+                      </span>
+                    ) : null}
+                  </div>
+                  {dish.summary ? (
+                    <p
+                      className="mt-2 break-words text-sm leading-6 text-cocoa"
+                      style={twoLineClampStyle}
+                    >
+                      {dish.summary}
+                    </p>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function WeeklyMenuScreen({
   menu,
   dishes,
   assignAction,
   clearAction,
+  addDishAction,
+  replaceItemAction,
+  removeItemAction,
   errorMessage,
   shoppingSummary,
 }: {
@@ -844,16 +1348,24 @@ export function WeeklyMenuScreen({
   dishes: DishSummary[];
   assignAction: (formData: FormData) => Promise<void>;
   clearAction: (formData: FormData) => Promise<void>;
+  addDishAction: (formData: FormData) => Promise<WeeklyMenuSlotMutationResult>;
+  replaceItemAction: (formData: FormData) => Promise<WeeklyMenuSlotMutationResult>;
+  removeItemAction: (formData: FormData) => Promise<WeeklyMenuSlotMutationResult>;
   errorMessage?: string;
   shoppingSummary: CurrentWeekShoppingListSummary | null;
 }) {
   const t = useT();
   const { locale } = useLocale();
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [sheetState, setSheetState] = useState<{
     dayIndex: number;
     mealType: MealType;
-    mode: "picker" | "details";
+    view: "overview" | "details" | "picker";
+    slotItemId?: string;
+    pickerMode?: "add" | "replace";
   } | null>(null);
+  const [slotFeedback, setSlotFeedback] = useState<string | null>(null);
   const [activeDayIndex, setActiveDayIndex] = useState(() =>
     getInitialActiveDayIndex(menu.days),
   );
@@ -864,8 +1376,9 @@ export function WeeklyMenuScreen({
   const selectedSlot = selectedDay?.slots.find(
     (slot) => slot.mealType === sheetState?.mealType,
   );
-  const isDetailsSheetInvalid =
-    sheetState?.mode === "details" && (!selectedDay || !selectedSlot || !selectedSlot.dishId);
+  const selectedSlotItem = sheetState?.slotItemId
+    ? selectedSlot?.items.find((item) => item.id === sheetState.slotItemId)
+    : undefined;
   const mealsAssignedText = activeDay
     ? t("weeklyMenu.day.mealsAssigned", {
         filled: activeDay.filledMeals,
@@ -874,12 +1387,86 @@ export function WeeklyMenuScreen({
     : "";
 
   useEffect(() => {
-    if (!isDetailsSheetInvalid) {
+    if (!sheetState) {
       return;
     }
 
-    setSheetState(null);
-  }, [isDetailsSheetInvalid]);
+    if (!selectedDay || !selectedSlot) {
+      setSheetState(null);
+      return;
+    }
+
+    if (sheetState.view === "details" && !selectedSlotItem) {
+      setSheetState({
+        dayIndex: sheetState.dayIndex,
+        mealType: sheetState.mealType,
+        view: selectedSlot.items.length > 0 ? "overview" : "picker",
+        pickerMode: selectedSlot.items.length > 0 ? undefined : "add",
+      });
+      return;
+    }
+
+    if (
+      sheetState.view === "picker" &&
+      sheetState.pickerMode === "replace" &&
+      sheetState.slotItemId &&
+      !selectedSlotItem
+    ) {
+      setSheetState({
+        dayIndex: sheetState.dayIndex,
+        mealType: sheetState.mealType,
+        view: selectedSlot.items.length > 0 ? "overview" : "picker",
+        pickerMode: selectedSlot.items.length > 0 ? undefined : "add",
+      });
+    }
+  }, [selectedDay, selectedSlot, selectedSlotItem, sheetState]);
+
+  function buildMutationFormData(fields: Record<string, string | number>) {
+    const formData = new FormData();
+
+    for (const [key, value] of Object.entries(fields)) {
+      formData.set(key, `${value}`);
+    }
+
+    return formData;
+  }
+
+  function getMutationErrorMessage(code: WeeklyMenuSlotMutationErrorCode) {
+    if (code === "duplicate_dish_in_slot") {
+      return t("weeklyMenu.slotFlow.duplicateNotice");
+    }
+
+    return t("weeklyMenu.slotFlow.actionFailed");
+  }
+
+  function resetToOverview(day: WeeklyMenuDayView, slot: WeeklyMenuSlotView) {
+    setSlotFeedback(null);
+    setSheetState({
+      dayIndex: day.dayIndex,
+      mealType: slot.mealType,
+      view: "overview",
+    });
+  }
+
+  function runSlotMutation(
+    action: (formData: FormData) => Promise<WeeklyMenuSlotMutationResult>,
+    fields: Record<string, string | number>,
+    onSuccess?: (result: Extract<WeeklyMenuSlotMutationResult, { status: "success" }>) => void,
+  ) {
+    setSlotFeedback(null);
+
+    startTransition(async () => {
+      const result = await action(buildMutationFormData(fields));
+
+      if (result.status === "success") {
+        onSuccess?.(result);
+        router.refresh();
+        return;
+      }
+
+      setSlotFeedback(getMutationErrorMessage(result.code));
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -962,13 +1549,7 @@ export function WeeklyMenuScreen({
           {activeDay ? (
             <DayCard
               day={activeDay}
-              onOpenSlot={(slot) =>
-                setSheetState({
-                  dayIndex: activeDay.dayIndex,
-                  mealType: slot.mealType,
-                  mode: slot.dishId ? "details" : "picker",
-                })
-              }
+              onOpenSlot={(slot) => resetToOverview(activeDay, slot)}
               noMealsAssignedText={t("weeklyMenu.day.noMealsAssigned")}
               mealsAssignedText={mealsAssignedText}
               todayLabel={t("weeklyMenu.day.today")}
@@ -985,48 +1566,187 @@ export function WeeklyMenuScreen({
         </>
       ) : null}
 
-      {selectedDay && selectedSlot?.dishId && sheetState?.mode === "details" ? (
-        <DishDetailsSheet
-          day={selectedDay}
-          slot={selectedSlot}
-          clearAction={clearAction}
-          onReplace={() =>
-            setSheetState((current) =>
-              current
-                ? {
-                    ...current,
-                    mode: "picker",
-                  }
-                : current,
-            )
-          }
-          onClose={() => setSheetState(null)}
-          locale={locale}
-        />
-      ) : null}
+      {selectedDay && selectedSlot && sheetState ? (
+        <SlotSheet
+          onClose={() => {
+            setSlotFeedback(null);
+            setSheetState(null);
+          }}
+          closeAriaLabel={t("weeklyMenu.sheet.closeAriaLabel")}
+        >
+          {sheetState.view === "overview" ? (
+            <SlotOverviewPanel
+              day={selectedDay}
+              slot={selectedSlot}
+              onOpenDetails={(slotItemId) =>
+                setSheetState({
+                  dayIndex: selectedDay.dayIndex,
+                  mealType: selectedSlot.mealType,
+                  view: "details",
+                  slotItemId,
+                })
+              }
+              onAdd={() =>
+                setSheetState({
+                  dayIndex: selectedDay.dayIndex,
+                  mealType: selectedSlot.mealType,
+                  view: "picker",
+                  pickerMode: "add",
+                })
+              }
+              onReplace={(slotItemId) =>
+                setSheetState({
+                  dayIndex: selectedDay.dayIndex,
+                  mealType: selectedSlot.mealType,
+                  view: "picker",
+                  pickerMode: "replace",
+                  slotItemId,
+                })
+              }
+              onRemove={(slotItemId) => {
+                const shouldRemove = window.confirm(
+                  t("weeklyMenu.slotFlow.removeConfirm", {
+                    mealLabel: selectedSlot.mealLabel.toLowerCase(),
+                    dayLabel: selectedDay.label,
+                    dateLabel: selectedDay.dateLabel,
+                  }),
+                );
 
-      {selectedDay && selectedSlot && sheetState?.mode === "picker" ? (
-        <DishPicker
-          day={selectedDay}
-          slot={selectedSlot}
-          dishes={dishes}
-          assignAction={assignAction}
-          onBack={
-            selectedSlot.dishId
-              ? () =>
-                  setSheetState((current) =>
-                    current
-                      ? {
-                          ...current,
-                          mode: "details",
-                        }
-                      : current,
-                  )
-              : undefined
-          }
-          onClose={() => setSheetState(null)}
-          locale={locale}
-        />
+                if (!shouldRemove) {
+                  return;
+                }
+
+                runSlotMutation(
+                  removeItemAction,
+                  {
+                    dayIndex: selectedDay.dayIndex,
+                    mealType: selectedSlot.mealType,
+                    slotItemId,
+                  },
+                  (result) => {
+                    if (result.slotIsEmpty) {
+                      setSlotFeedback(null);
+                      setSheetState(null);
+                      return;
+                    }
+
+                    resetToOverview(selectedDay, selectedSlot);
+                  },
+                );
+              }}
+              onClose={() => {
+                setSlotFeedback(null);
+                setSheetState(null);
+              }}
+              feedbackMessage={slotFeedback}
+              isPending={isPending}
+              locale={locale}
+            />
+          ) : null}
+
+          {sheetState.view === "details" && selectedSlotItem ? (
+            <SlotItemDetailsPanel
+              day={selectedDay}
+              slot={selectedSlot}
+              slotItem={selectedSlotItem}
+              onBack={() => resetToOverview(selectedDay, selectedSlot)}
+              onReplace={() =>
+                setSheetState({
+                  dayIndex: selectedDay.dayIndex,
+                  mealType: selectedSlot.mealType,
+                  view: "picker",
+                  pickerMode: "replace",
+                  slotItemId: selectedSlotItem.id,
+                })
+              }
+              onRemove={() => {
+                const shouldRemove = window.confirm(
+                  t("weeklyMenu.slotFlow.removeConfirm", {
+                    mealLabel: selectedSlot.mealLabel.toLowerCase(),
+                    dayLabel: selectedDay.label,
+                    dateLabel: selectedDay.dateLabel,
+                  }),
+                );
+
+                if (!shouldRemove) {
+                  return;
+                }
+
+                runSlotMutation(
+                  removeItemAction,
+                  {
+                    dayIndex: selectedDay.dayIndex,
+                    mealType: selectedSlot.mealType,
+                    slotItemId: selectedSlotItem.id,
+                  },
+                  (result) => {
+                    if (result.slotIsEmpty) {
+                      setSlotFeedback(null);
+                      setSheetState(null);
+                      return;
+                    }
+
+                    resetToOverview(selectedDay, selectedSlot);
+                  },
+                );
+              }}
+              onClose={() => {
+                setSlotFeedback(null);
+                setSheetState(null);
+              }}
+              isPending={isPending}
+              locale={locale}
+            />
+          ) : null}
+
+          {sheetState.view === "picker" ? (
+            <SlotDishPickerPanel
+              day={selectedDay}
+              slot={selectedSlot}
+              dishes={dishes}
+              replaceTargetItemId={
+                sheetState.pickerMode === "replace" ? sheetState.slotItemId : undefined
+              }
+              onBack={() => resetToOverview(selectedDay, selectedSlot)}
+              onClose={() => {
+                setSlotFeedback(null);
+                setSheetState(null);
+              }}
+              onSelectDish={(dishId) => {
+                if (sheetState.pickerMode === "replace" && sheetState.slotItemId) {
+                  runSlotMutation(
+                    replaceItemAction,
+                    {
+                      dayIndex: selectedDay.dayIndex,
+                      mealType: selectedSlot.mealType,
+                      slotItemId: sheetState.slotItemId,
+                      dishId,
+                    },
+                    () => {
+                      resetToOverview(selectedDay, selectedSlot);
+                    },
+                  );
+                  return;
+                }
+
+                runSlotMutation(
+                  addDishAction,
+                  {
+                    dayIndex: selectedDay.dayIndex,
+                    mealType: selectedSlot.mealType,
+                    dishId,
+                  },
+                  () => {
+                    resetToOverview(selectedDay, selectedSlot);
+                  },
+                );
+              }}
+              feedbackMessage={slotFeedback}
+              isPending={isPending}
+              locale={locale}
+            />
+          ) : null}
+        </SlotSheet>
       ) : null}
     </div>
   );

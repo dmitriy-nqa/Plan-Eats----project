@@ -79,7 +79,7 @@ export const enMessages: TranslationMessages = {
       eyebrow: "Main Screen",
       title: "Weekly Menu",
       description:
-        "Tap an empty slot to pick a dish. Tap a filled slot to open the dish details before cooking, then replace or clear it if needed.",
+        "Tap any slot to open its meal flow, review the current dishes, and adjust the plan without leaving the weekly rhythm.",
     },
     hero: {
       title: "Current family week",
@@ -100,10 +100,23 @@ export const enMessages: TranslationMessages = {
       pick: "Pick",
       archived: "Archived",
     },
+    slotFlow: {
+      eyebrow: "Slot",
+      emptyTitle: "This meal slot is still empty",
+      emptyDescription: "Start with one dish, then add more only if this meal needs it.",
+      addFirst: "Add first dish",
+      addMore: "Add more dishes",
+      remove: "Remove",
+      removeConfirm: "Remove this dish from {mealLabel} on {dayLabel}, {dateLabel}?",
+      backToSlot: "Back to slot",
+      alreadyInSlot: "Already in this slot",
+      duplicateNotice: "This dish is already in the slot.",
+      actionFailed: "Could not update this slot right now. Try again.",
+    },
     picker: {
       eyebrow: "Dish Picker",
       replaceEyebrow: "Replace Dish",
-      backToDetails: "Back to details",
+      backToDetails: "Back to slot",
       searchLabel: "Search dishes",
       searchPlaceholder: "Search dishes",
       summaryFallback: "No short summary yet.",
