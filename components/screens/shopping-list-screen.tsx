@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -32,6 +33,74 @@ type ShoppingListScreenProps = {
   deleteItemAction: (formData: FormData) => Promise<void>;
 };
 
+type ShoppingListSectionKey = "toBuy" | "bought";
+
+function getDefaultCollapsedSections(): Partial<
+  Record<ShoppingListSectionKey, boolean>
+> {
+  return {
+    toBuy: false,
+    bought: true,
+  };
+}
+
+function getCollapsedSectionsStorageKey() {
+  return "shopping-list:collapsed-sections";
+}
+
+function readCollapsedSections(): Partial<Record<ShoppingListSectionKey, boolean>> {
+  const defaultValue = getDefaultCollapsedSections();
+
+  if (typeof window === "undefined") {
+    return defaultValue;
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(getCollapsedSectionsStorageKey());
+
+    if (!rawValue) {
+      return defaultValue;
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+
+    if (!parsedValue || typeof parsedValue !== "object") {
+      return defaultValue;
+    }
+
+    const nextValue: Partial<Record<ShoppingListSectionKey, boolean>> = {
+      ...defaultValue,
+    };
+
+    if (typeof parsedValue.toBuy === "boolean") {
+      nextValue.toBuy = parsedValue.toBuy;
+    }
+
+    if (typeof parsedValue.bought === "boolean") {
+      nextValue.bought = parsedValue.bought;
+    }
+
+    return nextValue;
+  } catch {
+    return defaultValue;
+  }
+}
+
+function writeCollapsedSections(value: Partial<Record<ShoppingListSectionKey, boolean>>) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      getCollapsedSectionsStorageKey(),
+      JSON.stringify(value),
+    );
+  } catch {
+    // Ignore storage write failures and keep the UI responsive.
+  }
+}
+
 function CheckedIcon() {
   return (
     <svg
@@ -46,6 +115,58 @@ function CheckedIcon() {
     >
       <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
     </svg>
+  );
+}
+
+function SectionToggle({
+  label,
+  count,
+  isExpanded,
+  onToggle,
+  tone = "primary",
+}: {
+  label: string;
+  count: number;
+  isExpanded: boolean;
+  onToggle: () => void;
+  tone?: "primary" | "secondary";
+}) {
+  const countLabelClass =
+    tone === "secondary" ? "text-cocoa/68" : "text-cocoa/76";
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={[
+        "flex w-full items-center justify-between gap-3 rounded-[1.2rem] px-1 py-2 text-left transition",
+        tone === "secondary" ? "text-cocoa hover:bg-white/40" : "hover:bg-white/42",
+      ].join(" ")}
+      aria-expanded={isExpanded}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <p className="text-sm font-semibold text-ink">{label}</p>
+        <span className={`text-xs font-medium ${countLabelClass}`}>{count}</span>
+      </div>
+
+      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-cocoa shadow-sm">
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 16 16"
+          className={[
+            "h-4 w-4 transition",
+            isExpanded ? "rotate-90" : "rotate-0",
+          ].join(" ")}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M6 4.5 9.5 8 6 11.5" />
+        </svg>
+      </span>
+    </button>
   );
 }
 
@@ -70,12 +191,12 @@ function ShoppingListRow({
       className={[
         "rounded-[1.25rem] border px-3 py-3 shadow-sm transition",
         item.isChecked
-          ? "border-leaf/20 bg-leaf/5"
+          ? "border-white/70 bg-white/72"
           : "border-white/80 bg-white/92",
       ].join(" ")}
     >
       <div className="flex items-start gap-3">
-        <div className="flex w-14 shrink-0 flex-col items-center gap-1 pt-0.5">
+        <div className="flex w-12 shrink-0 flex-col items-center gap-1.5 pt-0.5">
           <form action={toggleCheckedAction}>
             <input type="hidden" name="itemId" value={item.id} />
             <input type="hidden" name="nextChecked" value={String(!item.isChecked)} />
@@ -93,42 +214,34 @@ function ShoppingListRow({
             </button>
           </form>
 
-          <span
-            className={[
-              "text-center text-[10px] font-semibold uppercase tracking-[0.14em]",
-              item.isChecked ? "text-leaf" : "text-cocoa/72",
-            ].join(" ")}
-          >
+          <span className="text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-cocoa/72">
             {toggleLabel}
           </span>
         </div>
 
-        <div className="min-w-0 flex-1 space-y-2">
+        <div className="min-w-0 flex-1 space-y-2.5">
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
               <p
                 className={[
                   "break-words text-[15px] font-semibold leading-5 text-ink",
-                  item.isChecked ? "line-through opacity-60" : "",
+                  item.isChecked ? "text-cocoa" : "",
                 ].join(" ")}
               >
                 {item.ingredientName}
               </p>
 
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <span
                   className={[
                     "rounded-full px-2.5 py-1 text-xs font-semibold",
-                    item.isChecked ? "bg-white/75 text-cocoa/80" : "bg-sand/70 text-cocoa",
+                    item.isChecked ? "bg-white/88 text-cocoa" : "bg-sand/70 text-cocoa",
                   ].join(" ")}
                 >
                   {item.quantity} {item.unit}
                 </span>
 
-                <p className="text-xs leading-5 text-cocoa/82">
-                  <span className="font-semibold text-cocoa/72">{copy.row.sourceLabel}:</span>{" "}
-                  {sourceText}
-                </p>
+                <p className="text-xs leading-5 text-cocoa/72">{sourceText}</p>
               </div>
             </div>
           </div>
@@ -209,10 +322,16 @@ export function ShoppingListScreen({
 }: ShoppingListScreenProps) {
   const { locale } = useLocale();
   const copy = getShoppingListCopy(locale);
+  const [collapsedSections, setCollapsedSections] = useState<
+    Partial<Record<ShoppingListSectionKey, boolean>>
+  >(getDefaultCollapsedSections);
+  const [hasLoadedCollapsedSections, setHasLoadedCollapsedSections] = useState(false);
   const items = snapshot?.items ?? [];
   const toBuyItems = items.filter((item) => !item.isChecked);
   const boughtItems = items.filter((item) => item.isChecked);
   const hasItems = items.length > 0;
+  const isToBuyExpanded = !collapsedSections.toBuy;
+  const isBoughtExpanded = !collapsedSections.bought;
   const flowState = getShoppingFlowState({
     hasMealPlan,
     totalItems: items.length,
@@ -239,6 +358,26 @@ export function ShoppingListScreen({
       : boughtItems.length > 0
         ? "text-ink"
         : "text-cocoa";
+
+  useLayoutEffect(() => {
+    setCollapsedSections(readCollapsedSections());
+    setHasLoadedCollapsedSections(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedCollapsedSections) {
+      return;
+    }
+
+    writeCollapsedSections(collapsedSections);
+  }, [collapsedSections, hasLoadedCollapsedSections]);
+
+  function toggleSection(section: ShoppingListSectionKey) {
+    setCollapsedSections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  }
 
   return (
     <div className="space-y-4">
@@ -306,58 +445,63 @@ export function ShoppingListScreen({
 
       {!errorMessage && hasItems ? (
         <div className="space-y-5">
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3 px-1">
-              <p className="text-sm font-semibold text-ink">{copy.sections.toBuy}</p>
-              <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
-                {toBuyItems.length}
-              </span>
-            </div>
+          <SurfaceCard className="space-y-3 bg-white/78">
+            <SectionToggle
+              label={copy.sections.toBuy}
+              count={toBuyItems.length}
+              isExpanded={isToBuyExpanded}
+              onToggle={() => toggleSection("toBuy")}
+            />
 
-            {toBuyItems.length > 0 ? (
-              <div className="space-y-2">
-                {toBuyItems.map((item) => (
-                  <ShoppingListRow
-                    key={item.id}
-                    item={item}
-                    deleteItemAction={deleteItemAction}
-                    toggleCheckedAction={toggleCheckedAction}
-                  />
-                ))}
-              </div>
-            ) : (
-              <SurfaceCard
-                className={
-                  flowState === "complete" ? "border-leaf/15 bg-leaf/8" : "bg-white/75"
-                }
-              >
-                <p className="text-sm leading-6 text-cocoa">
-                  {flowState === "complete" ? copy.flow.completeNote : copy.empty.manualHint}
-                </p>
-              </SurfaceCard>
-            )}
-          </section>
+            {isToBuyExpanded ? (
+              toBuyItems.length > 0 ? (
+                <div className="space-y-2">
+                  {toBuyItems.map((item) => (
+                    <ShoppingListRow
+                      key={item.id}
+                      item={item}
+                      deleteItemAction={deleteItemAction}
+                      toggleCheckedAction={toggleCheckedAction}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <SurfaceCard
+                  className={
+                    flowState === "complete" ? "border-leaf/15 bg-leaf/8" : "bg-white/75"
+                  }
+                >
+                  <p className="text-sm leading-6 text-cocoa">
+                    {flowState === "complete" ? copy.flow.completeNote : copy.empty.manualHint}
+                  </p>
+                </SurfaceCard>
+              )
+            ) : null}
+          </SurfaceCard>
 
           {boughtItems.length > 0 ? (
-            <section className="space-y-3">
-              <div className="flex items-center justify-between gap-3 px-1">
-                <p className="text-sm font-semibold text-ink">{copy.sections.bought}</p>
-                <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
-                  {boughtItems.length}
-                </span>
-              </div>
+            <SurfaceCard className="space-y-3 border-white/70 bg-cream/72">
+              <SectionToggle
+                label={copy.sections.bought}
+                count={boughtItems.length}
+                isExpanded={isBoughtExpanded}
+                onToggle={() => toggleSection("bought")}
+                tone="secondary"
+              />
 
-              <div className="space-y-2">
-                {boughtItems.map((item) => (
-                  <ShoppingListRow
-                    key={item.id}
-                    item={item}
-                    deleteItemAction={deleteItemAction}
-                    toggleCheckedAction={toggleCheckedAction}
-                  />
-                ))}
-              </div>
-            </section>
+              {isBoughtExpanded ? (
+                <div className="space-y-2">
+                  {boughtItems.map((item) => (
+                    <ShoppingListRow
+                      key={item.id}
+                      item={item}
+                      deleteItemAction={deleteItemAction}
+                      toggleCheckedAction={toggleCheckedAction}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </SurfaceCard>
           ) : null}
         </div>
       ) : null}
