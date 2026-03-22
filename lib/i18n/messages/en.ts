@@ -232,6 +232,7 @@ export const enMessages: TranslationMessages = {
           title: "Archived dishes will appear here",
           description:
             "When you archive a dish, it leaves the active library and stays here until you decide to restore it.",
+          cta: "Go to active",
         },
       },
     },

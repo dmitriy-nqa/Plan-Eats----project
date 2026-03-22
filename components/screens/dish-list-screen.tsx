@@ -270,6 +270,8 @@ function EmptyDishState({
   isSearchEmpty: boolean;
 }) {
   const t = useT();
+  const showAddDishAction = !isSearchEmpty && mode === "active";
+  const showGoToActiveAction = !isSearchEmpty && mode === "archived";
   const title = isSearchEmpty
     ? t("dishes.library.empty.search.title")
     : mode === "active"
@@ -291,12 +293,20 @@ function EmptyDishState({
           {title}
         </h2>
         <p className="mt-3 max-w-[32ch] text-sm leading-6 text-cocoa">{description}</p>
-        {!isSearchEmpty ? (
+        {showAddDishAction ? (
           <Link
             href="/dishes/new"
             className="mt-5 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
           >
             {t("dishes.actions.addDish")}
+          </Link>
+        ) : null}
+        {showGoToActiveAction ? (
+          <Link
+            href={getDishLibraryHref("active")}
+            className="mt-5 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
+          >
+            {t("dishes.library.empty.archived.cta")}
           </Link>
         ) : null}
       </div>
@@ -366,6 +376,7 @@ export function DishListScreen({
   const hasDishes = initialDishes.length > 0;
   const hasResults = sections.length > 0;
   const hasSearchQuery = normalizedQuery.length > 0;
+  const showAddDishAction = mode === "active";
 
   function toggleSection(category: DishCategory) {
     if (hasSearchQuery) {
@@ -403,12 +414,14 @@ export function DishListScreen({
             </p>
           </div>
 
-          <Link
-            href="/dishes/new"
-            className="inline-flex rounded-[1.2rem] bg-clay px-4 py-3 text-sm font-semibold text-white shadow-sm"
-          >
-            {t("dishes.actions.addDish")}
-          </Link>
+          {showAddDishAction ? (
+            <Link
+              href="/dishes/new"
+              className="inline-flex rounded-[1.2rem] bg-clay px-4 py-3 text-sm font-semibold text-white shadow-sm"
+            >
+              {t("dishes.actions.addDish")}
+            </Link>
+          ) : null}
         </div>
 
         <div className="mt-4">
