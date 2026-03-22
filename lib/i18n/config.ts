@@ -229,6 +229,7 @@ export type TranslationMessages = {
         archived: {
           title: string;
           description: string;
+          cta: string;
         };
       };
     };
@@ -570,6 +571,7 @@ export type TranslationKey =
   | "dishes.library.empty.active.description"
   | "dishes.library.empty.archived.title"
   | "dishes.library.empty.archived.description"
+  | "dishes.library.empty.archived.cta"
   | "dishes.details.header.eyebrow"
   | "dishes.details.header.activeDescription"
   | "dishes.details.header.archivedDescription"
