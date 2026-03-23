@@ -4,6 +4,22 @@ import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import {
+  backActionClassName,
+  countPillClassName,
+  errorSurfaceClassName,
+  infoCardClassName,
+  inlineNoticeClassName,
+  metaPillClassName,
+  stateSurfaceBadgeClassName,
+  stateSurfaceBodyClassName,
+  stateSurfaceClassName,
+  stateSurfaceDescriptionClassName,
+  stateSurfaceTitleClassName,
+  topSurfaceClassName,
+  topSurfaceDescriptionClassName,
+  topSurfaceIntroClassName,
+} from "@/components/ui/presentation";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import type { AppLocale } from "@/lib/i18n/config";
@@ -69,6 +85,17 @@ const twoLineClampStyle = {
   WebkitLineClamp: 2,
   overflow: "hidden",
 };
+
+const sheetTitleClassName =
+  "break-words font-[var(--font-heading)] text-[2rem] font-semibold leading-[0.98] text-ink";
+
+const sheetScrollAreaClassName =
+  "mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1";
+
+const sheetFooterClassName =
+  "shrink-0 border-t border-white/70 bg-paper-glow/95 pt-3.5 backdrop-blur-sm";
+
+const sheetFooterCardClassName = "rounded-[1.4rem] bg-white/84 p-3 shadow-sm";
 
 function getDishNotePresentation(note?: string) {
   const normalizedNote = note?.trim();
@@ -179,11 +206,11 @@ function WeeklyMenuHero({
   emptyText: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-gradient-to-br from-white via-cream to-almond px-4 py-5 shadow-card">
+    <section className={topSurfaceClassName}>
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-ink">{title}</p>
-          <p className="mt-2 max-w-[34ch] text-sm leading-6 text-cocoa">
+        <div className={topSurfaceIntroClassName}>
+          <p className="text-base font-semibold text-ink">{title}</p>
+          <p className={topSurfaceDescriptionClassName}>
             {hasMealPlan ? withMealPlanText : emptyText}
           </p>
         </div>
@@ -266,32 +293,32 @@ function SlotButton({
       type="button"
       onClick={onOpen}
       className={[
-        "flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition active:translate-y-px",
+        "flex w-full items-center justify-between rounded-[1.35rem] px-3.5 py-3.5 text-left transition active:translate-y-px",
         isFilled
           ? "border border-white/80 bg-white shadow-sm hover:bg-white/90"
           : "border border-dashed border-clay/35 bg-sand/45 hover:bg-sand/70",
       ].join(" ")}
     >
-      <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cocoa">
+      <div className="min-w-0 space-y-1.5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cocoa/82">
           {slot.mealLabel}
         </p>
         {!isFilled ? (
           <p
-            className="mt-1 break-words pr-1 text-sm leading-5 text-cocoa"
+            className="break-words pr-1 text-sm leading-5 text-cocoa"
             style={twoLineClampStyle}
           >
             {chooseDishLabel}
           </p>
         ) : visibleItemNames.length === 1 ? (
           <p
-            className="mt-1 break-words pr-1 text-sm font-semibold leading-5 text-ink"
+            className="break-words pr-1 text-sm font-semibold leading-5 text-ink"
             style={twoLineClampStyle}
           >
             {primaryItem?.dishName}
           </p>
         ) : (
-          <div className="mt-1 space-y-1 pr-1">
+          <div className="space-y-1.5 pr-1">
             {visibleItemNames.map((itemName, index) => (
               <p
                 key={`${slot.mealType}-summary-${index + 1}`}
@@ -301,7 +328,7 @@ function SlotButton({
               </p>
             ))}
             {overflowCount > 0 ? (
-              <p className="text-xs font-semibold leading-5 text-cocoa">
+              <p className="text-[11px] font-semibold leading-5 text-cocoa/82">
                 +{overflowCount} more
               </p>
             ) : null}
@@ -309,9 +336,9 @@ function SlotButton({
         )}
       </div>
 
-      <div className="ml-3 flex shrink-0 items-center gap-2">
+      <div className="ml-4 flex shrink-0 items-center gap-2.5">
         {slot.hasArchivedItems ? (
-          <span className="rounded-full bg-sand px-3 py-1 text-[11px] font-semibold text-cocoa">
+          <span className="rounded-full bg-sand px-2.5 py-1 text-[11px] font-semibold text-cocoa">
             {archivedLabel}
           </span>
         ) : null}
@@ -331,7 +358,7 @@ function SlotButton({
             </svg>
           </span>
         ) : (
-          <span className="rounded-full border border-clay/40 px-3 py-1 text-[11px] font-semibold text-clay">
+          <span className="rounded-full border border-clay/35 bg-white/72 px-3 py-1 text-[11px] font-semibold text-clay">
             {pickLabel}
           </span>
         )}
@@ -361,7 +388,7 @@ function DayCard({
 }) {
   return (
     <SurfaceCard className="overflow-hidden p-0">
-      <div className="border-b border-sand/70 bg-white/45 px-4 py-3">
+      <div className="border-b border-sand/70 bg-white/45 px-4 py-3.5">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-base font-semibold text-ink">
@@ -370,7 +397,7 @@ function DayCard({
                 {day.dateLabel}
               </span>
             </p>
-            <p className="mt-1 text-xs text-cocoa">
+            <p className="mt-1.5 text-xs text-cocoa/84">
               {day.filledMeals === 0 ? noMealsAssignedText : mealsAssignedText}
             </p>
           </div>
@@ -383,7 +410,7 @@ function DayCard({
         </div>
       </div>
 
-      <div className="space-y-2 px-4 py-4">
+      <div className="space-y-2.5 px-4 py-4">
         {day.slots.map((slot) => (
           <SlotButton
             key={slot.mealType}
@@ -505,8 +532,8 @@ function SlotSheet({
         className="absolute inset-0 bg-cocoa/30 backdrop-blur-[2px]"
       />
 
-      <div className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[92dvh] w-full max-w-[440px] flex-col overflow-hidden rounded-t-[2rem] border border-white/70 bg-paper-glow px-4 pb-5 pt-4 shadow-shell">
-        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-sand" />
+      <div className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[92dvh] w-full max-w-[440px] flex-col overflow-hidden rounded-t-[2.1rem] border border-white/70 bg-paper-glow px-4 pb-5 pt-3.5 shadow-shell">
+        <div className="mx-auto mb-3.5 h-1.5 w-12 rounded-full bg-sand" />
         {children}
       </div>
     </div>
@@ -529,16 +556,16 @@ function SlotSheetHeader({
   archivedDishLabel: string;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-clay">
+    <div className="flex items-start justify-between gap-3.5">
+      <div className="min-w-0 space-y-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-clay">
           {eyebrow}
         </p>
-        <h2 className="mt-2 font-[var(--font-heading)] text-3xl font-semibold leading-none text-ink">
+        <h2 className={sheetTitleClassName}>
           {day.label}
         </h2>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
+        <div className="flex flex-wrap gap-2">
+          <span className={metaPillClassName}>
             {day.dateLabel}
           </span>
           <span className="rounded-full bg-blush px-3 py-1 text-xs font-semibold text-ink">
@@ -555,7 +582,7 @@ function SlotSheetHeader({
       <button
         type="button"
         onClick={onClose}
-        className="shrink-0 rounded-full bg-white px-3 py-2 text-xs font-semibold text-cocoa shadow-sm"
+        className={`shrink-0 ${backActionClassName}`}
       >
         {closeLabel}
       </button>
@@ -573,16 +600,16 @@ function DetailSection({
   className?: string;
 }) {
   return (
-    <SurfaceCard className={`bg-white/85 ${className}`.trim()}>
+    <SurfaceCard className={`${infoCardClassName} ${className}`.trim()}>
       <p className="text-sm font-semibold tracking-[0.01em] text-ink">{title}</p>
-      <div className="mt-2.5 text-sm leading-6 text-cocoa">{children}</div>
+      <div className="mt-3 text-sm leading-6 text-cocoa">{children}</div>
     </SurfaceCard>
   );
 }
 
 function MetadataBadge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full border border-sand/70 bg-sand/35 px-3 py-1 text-[11px] font-medium text-cocoa">
+    <span className="rounded-full border border-sand/70 bg-sand/30 px-3 py-1 text-[11px] font-medium text-cocoa">
       {children}
     </span>
   );
@@ -972,7 +999,7 @@ function SlotFlowNotice({ message }: { message: string | null }) {
   }
 
   return (
-    <SurfaceCard className="mt-4 border-clay/15 bg-white/85">
+    <SurfaceCard className={`mt-4 ${inlineNoticeClassName}`}>
       <p className="text-sm leading-6 text-cocoa">{message}</p>
     </SurfaceCard>
   );
@@ -1021,9 +1048,9 @@ function SlotOverviewPanel({
 
       <SlotFlowNotice message={feedbackMessage} />
 
-      <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1">
+      <div className={sheetScrollAreaClassName}>
         {!hasItems ? (
-          <SurfaceCard className="bg-white/88">
+          <SurfaceCard className={infoCardClassName}>
             <p className="text-sm font-semibold text-ink">
               {t("weeklyMenu.slotFlow.emptyTitle")}
             </p>
@@ -1032,14 +1059,14 @@ function SlotOverviewPanel({
             </p>
           </SurfaceCard>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3.5">
             {slot.items.map((item, index) => {
               const categoryLabel = item.dishDetails
                 ? getDishCategoryLabel(item.dishDetails.category, locale)
                 : null;
 
               return (
-                <SurfaceCard key={item.id} className="bg-white/90">
+                <SurfaceCard key={item.id} className="bg-white/88">
                   <button
                     type="button"
                     onClick={() => onOpenDetails(item.id)}
@@ -1047,15 +1074,15 @@ function SlotOverviewPanel({
                     className="w-full text-left disabled:opacity-70"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-clay">
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-clay">
                           {slot.mealLabel} {index + 1}
                         </p>
-                        <p className="mt-1 break-words text-sm font-semibold leading-5 text-ink">
+                        <p className="break-words text-sm font-semibold leading-5 text-ink">
                           {item.dishName}
                         </p>
                         {categoryLabel ? (
-                          <p className="mt-1 text-xs font-medium text-cocoa">
+                          <p className="text-xs font-medium text-cocoa/82">
                             {categoryLabel}
                           </p>
                         ) : null}
@@ -1078,7 +1105,7 @@ function SlotOverviewPanel({
                     </div>
                   </button>
 
-                  <div className="mt-3 grid grid-cols-3 gap-2">
+                  <div className="mt-3.5 grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => onReplace(item.id)}
@@ -1111,7 +1138,7 @@ function SlotOverviewPanel({
         )}
 
         {slot.hasArchivedItems ? (
-          <SurfaceCard className="mt-3 border-sand/80 bg-sand/35">
+          <SurfaceCard className="mt-3 border-sand/75 bg-sand/28">
             <p className="text-sm leading-6 text-cocoa">
               {t("weeklyMenu.reuse.activeOnlyNotice")}
             </p>
@@ -1119,8 +1146,8 @@ function SlotOverviewPanel({
         ) : null}
       </div>
 
-      <div className="shrink-0 border-t border-white/70 bg-paper-glow/95 pt-3 backdrop-blur-sm">
-        <div className="space-y-2">
+      <div className={sheetFooterClassName}>
+        <div className={`${sheetFooterCardClassName} space-y-2.5`}>
           {hasItems ? (
             <button
               type="button"
@@ -1196,15 +1223,15 @@ function SlotItemDetailsPanel({
         type="button"
         onClick={onBack}
         disabled={isPending}
-        className="mt-4 self-start rounded-full bg-white px-4 py-2 text-xs font-semibold text-cocoa shadow-sm disabled:opacity-60"
+        className={`mt-4 self-start disabled:opacity-60 ${backActionClassName}`}
       >
         {t("weeklyMenu.slotFlow.backToSlot")}
       </button>
 
-      <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1">
-        <div className="space-y-3">
-          <SurfaceCard className="bg-white/88">
-            <h2 className="break-words font-[var(--font-heading)] text-3xl font-semibold leading-none text-ink">
+      <div className={sheetScrollAreaClassName}>
+        <div className="space-y-3.5">
+          <SurfaceCard className={infoCardClassName}>
+            <h2 className={sheetTitleClassName}>
               {dishTitle}
             </h2>
             {(showCategory || showArchivedBadge) ? (
@@ -1220,7 +1247,7 @@ function SlotItemDetailsPanel({
           {dishDetails ? (
             <>
               {practicalNote ? (
-                <SurfaceCard className="border-leaf/20 bg-leaf/10">
+                <SurfaceCard className="border-leaf/18 bg-leaf/9">
                   <p className="text-sm font-semibold text-ink">
                     {t("weeklyMenu.details.cookNote")}
                   </p>
@@ -1258,7 +1285,7 @@ function SlotItemDetailsPanel({
               ) : null}
             </>
           ) : (
-            <SurfaceCard className="bg-white/85">
+            <SurfaceCard className={infoCardClassName}>
               <p className="text-sm font-semibold text-ink">
                 {t("weeklyMenu.details.unavailable.title")}
               </p>
@@ -1270,10 +1297,10 @@ function SlotItemDetailsPanel({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-white/70 bg-paper-glow/95 pt-3 backdrop-blur-sm">
-        <div className="rounded-[1.4rem] bg-white/88 p-3 shadow-sm">
+      <div className={sheetFooterClassName}>
+        <div className={sheetFooterCardClassName}>
           {slotItem.isArchivedDish ? (
-            <p className="mb-3 text-sm leading-6 text-cocoa">
+            <p className="mb-3 rounded-[1.1rem] bg-sand/30 px-3 py-2.5 text-sm leading-6 text-cocoa">
               {t("weeklyMenu.reuse.activeOnlyNotice")}
             </p>
           ) : null}
@@ -1373,7 +1400,7 @@ function SlotDishPickerPanel({
         type="button"
         onClick={onBack}
         disabled={isPending}
-        className="mt-4 self-start rounded-full bg-white px-4 py-2 text-xs font-semibold text-cocoa shadow-sm disabled:opacity-60"
+        className={`mt-4 self-start disabled:opacity-60 ${backActionClassName}`}
       >
         {t("weeklyMenu.slotFlow.backToSlot")}
       </button>
@@ -1388,13 +1415,13 @@ function SlotDishPickerPanel({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t("weeklyMenu.picker.searchPlaceholder")}
-              className="w-full rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-cocoa/55"
+              className="w-full rounded-[1.35rem] border border-white/75 bg-white/92 px-4 py-3 text-sm text-ink outline-none placeholder:text-cocoa/55"
             />
           </label>
         ) : null}
 
         {dishes.length === 0 ? (
-          <SurfaceCard className="mt-4 bg-white/85">
+          <SurfaceCard className={`mt-4 ${infoCardClassName}`}>
             <p className="text-sm font-semibold text-ink">
               {t("weeklyMenu.picker.empty.title")}
             </p>
@@ -1411,7 +1438,7 @@ function SlotDishPickerPanel({
         ) : null}
 
         {dishes.length > 0 && filteredDishes.length === 0 ? (
-          <SurfaceCard className="mt-4 bg-white/85">
+          <SurfaceCard className={`mt-4 ${infoCardClassName}`}>
             <p className="text-sm font-semibold text-ink">
               {t("weeklyMenu.picker.noResults.title")}
             </p>
@@ -1422,7 +1449,7 @@ function SlotDishPickerPanel({
         ) : null}
 
         {filteredDishes.length > 0 ? (
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 space-y-2.5">
             {filteredDishes.map((dish) => {
               const isDuplicate = blockedDishIds.has(dish.id);
 
@@ -1433,7 +1460,7 @@ function SlotDishPickerPanel({
                   onClick={() => onSelectDish(dish.id)}
                   disabled={isDuplicate || isPending}
                   className={[
-                    "w-full rounded-[1.4rem] border px-4 py-3 text-left shadow-sm transition",
+                    "w-full rounded-[1.4rem] border px-4 py-3.5 text-left shadow-sm transition",
                     isDuplicate
                       ? "border-sand/80 bg-sand/45 text-cocoa/85"
                       : "border-white/80 bg-white/90 hover:bg-white",
@@ -1441,16 +1468,16 @@ function SlotDishPickerPanel({
                   ].join(" ")}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="min-w-0 space-y-1.5">
                       <p className="break-words text-sm font-semibold leading-5 text-ink">
                         {dish.name}
                       </p>
-                      <p className="mt-1 text-xs font-medium text-clay">
+                      <p className="text-xs font-medium text-clay">
                         {getDishCategoryLabel(dish.category, locale)}
                       </p>
                     </div>
                     {isDuplicate ? (
-                      <span className="rounded-full bg-white/85 px-3 py-1 text-[11px] font-semibold text-cocoa shadow-sm">
+                      <span className={metaPillClassName}>
                         {t("weeklyMenu.slotFlow.alreadyInSlot")}
                       </span>
                     ) : null}
@@ -1552,16 +1579,16 @@ function SlotReusePickerPanel({
         type="button"
         onClick={onBack}
         disabled={isPending}
-        className="mt-4 self-start rounded-full bg-white px-4 py-2 text-xs font-semibold text-cocoa shadow-sm disabled:opacity-60"
+        className={`mt-4 self-start disabled:opacity-60 ${backActionClassName}`}
       >
         {t("weeklyMenu.reuse.backToSlot")}
       </button>
 
       <SlotFlowNotice message={feedbackMessage} />
 
-      <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1">
+      <div className={sheetScrollAreaClassName}>
         <div className="space-y-4">
-          <SurfaceCard className="bg-white/88">
+          <SurfaceCard className={infoCardClassName}>
             <p className="text-sm font-semibold text-ink">
               {mode === "slot"
                 ? t("weeklyMenu.reuse.sourceSlot")
@@ -1587,13 +1614,13 @@ function SlotReusePickerPanel({
                 ? t("weeklyMenu.reuse.slotDescription")
                 : t("weeklyMenu.reuse.itemDescription")}
             </p>
-            <p className="mt-2 text-sm leading-6 text-cocoa">
+            <p className="mt-2 text-xs font-medium leading-6 text-cocoa/78">
               {t("weeklyMenu.reuse.independentHint")}
             </p>
           </SurfaceCard>
 
           {!canReuse ? (
-            <SurfaceCard className="border-sand/80 bg-sand/35">
+            <SurfaceCard className="border-sand/75 bg-sand/28">
               <p className="text-sm leading-6 text-cocoa">
                 {t("weeklyMenu.reuse.activeOnlyNotice")}
               </p>
@@ -1634,20 +1661,20 @@ function SlotReusePickerPanel({
                     }
                     disabled={!canReuse || !target.isAvailable || isPending}
                     className={[
-                      "w-full rounded-[1.4rem] border px-4 py-3 text-left shadow-sm transition",
+                      "w-full rounded-[1.4rem] border px-4 py-3.5 text-left shadow-sm transition",
                       target.isAvailable
                         ? "border-white/80 bg-white/92 hover:bg-white"
                         : "border-sand/80 bg-sand/45 text-cocoa/90",
                       isPending ? "opacity-70" : "",
                     ].join(" ")}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-ink">{target.mealLabel}</p>
-                        <p className="mt-1 break-words text-sm leading-6 text-cocoa">
-                          {target.isAvailable ? target.summaryLabel : target.statusLabel}
-                        </p>
-                      </div>
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 space-y-1.5">
+                          <p className="text-sm font-semibold text-ink">{target.mealLabel}</p>
+                          <p className="break-words text-sm leading-6 text-cocoa">
+                            {target.isAvailable ? target.summaryLabel : target.statusLabel}
+                          </p>
+                        </div>
 
                       <span
                         className={[
@@ -1669,7 +1696,7 @@ function SlotReusePickerPanel({
           ) : null}
 
           {canReuse && noAvailableTargets ? (
-            <SurfaceCard className="bg-white/85">
+            <SurfaceCard className={infoCardClassName}>
               <p className="text-sm font-semibold text-ink">
                 {t("weeklyMenu.reuse.noTargetsTitle")}
               </p>
@@ -1866,7 +1893,7 @@ export function WeeklyMenuScreen({
       />
 
       {errorMessage ? (
-        <SurfaceCard className="border-clay/20 bg-white/90">
+        <SurfaceCard className={errorSurfaceClassName}>
           <p className="text-sm font-semibold text-ink">
             {t("weeklyMenu.errors.title")}
           </p>
@@ -1883,17 +1910,17 @@ export function WeeklyMenuScreen({
 
       {!errorMessage ? (
         <>
-          <SurfaceCard className="space-y-4">
+          <SurfaceCard className="space-y-4 p-5">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="space-y-1.5">
                 <p className="text-sm font-semibold text-ink">
                   {t("weeklyMenu.overview.title")}
                 </p>
-                <p className="mt-1 text-sm text-cocoa">
+                <p className="text-sm leading-6 text-cocoa">
                   {t("weeklyMenu.overview.description")}
                 </p>
               </div>
-              <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
+              <span className={countPillClassName}>
                 {menu.filledSlots}/{menu.totalSlots}
               </span>
             </div>
@@ -1911,19 +1938,24 @@ export function WeeklyMenuScreen({
           </SurfaceCard>
 
           {dishes.length === 0 ? (
-            <SurfaceCard className="bg-white/85">
-              <p className="text-sm font-semibold text-ink">
-                {t("weeklyMenu.empty.title")}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-cocoa">
-                {t("weeklyMenu.empty.description")}
-              </p>
-              <Link
-                href="/dishes/new"
-                className="mt-4 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
-              >
-                {t("weeklyMenu.empty.cta")}
-              </Link>
+            <SurfaceCard className={stateSurfaceClassName}>
+              <div className={stateSurfaceBodyClassName}>
+                <div className={stateSurfaceBadgeClassName}>
+                  {t("navigation.badges.weeklyMenu")}
+                </div>
+                <h2 className={stateSurfaceTitleClassName}>
+                  {t("weeklyMenu.empty.title")}
+                </h2>
+                <p className={stateSurfaceDescriptionClassName}>
+                  {t("weeklyMenu.empty.description")}
+                </p>
+                <Link
+                  href="/dishes/new"
+                  className="mt-5 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
+                >
+                  {t("weeklyMenu.empty.cta")}
+                </Link>
+              </div>
             </SurfaceCard>
           ) : null}
 

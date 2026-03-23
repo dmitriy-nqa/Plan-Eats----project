@@ -3,6 +3,23 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import {
+  countPillClassName,
+  errorSurfaceClassName,
+  sectionContentStackClassName,
+  sectionHeaderButtonClassName,
+  sectionHeaderCountClassName,
+  sectionHeaderTitleRowClassName,
+  stateSurfaceBadgeClassName,
+  stateSurfaceBodyClassName,
+  stateSurfaceClassName,
+  stateSurfaceDescriptionClassName,
+  stateSurfaceTitleClassName,
+  topSurfaceClassName,
+  topSurfaceDescriptionClassName,
+  topSurfaceIntroClassName,
+  topSurfaceStackClassName,
+} from "@/components/ui/presentation";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { useLocale, useT } from "@/lib/i18n/provider";
@@ -159,7 +176,7 @@ function DishCard({
     <Link
       href={`/dishes/${dish.id}?mode=${mode}`}
       className={[
-        "group flex items-start gap-3 rounded-[1.35rem] border px-4 py-3 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay/35 focus-visible:ring-offset-2",
+        "group flex items-start gap-3.5 rounded-[1.4rem] border px-4 py-3.5 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay/35 focus-visible:ring-offset-2",
         isArchivedMode
           ? "border-white/70 bg-almond/55 hover:bg-almond/70 focus-visible:ring-offset-almond/40"
           : "border-white/80 bg-white/90 hover:bg-white focus-visible:ring-offset-cream",
@@ -167,11 +184,11 @@ function DishCard({
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          <div className="min-w-0 space-y-1.5">
             <p className="break-words text-sm font-semibold leading-5 text-ink">{dish.name}</p>
             <p
               className={[
-                "mt-1 text-xs font-medium",
+                "text-xs font-medium",
                 isArchivedMode ? "text-cocoa/75" : "text-clay",
               ].join(" ")}
             >
@@ -204,8 +221,8 @@ function DishCard({
 
         <p
           className={[
-            "mt-2 break-words text-sm leading-6",
-            isArchivedMode ? "text-cocoa/90" : "text-cocoa",
+            "mt-2.5 break-words text-sm leading-6",
+            isArchivedMode ? "text-cocoa/88" : "text-cocoa/92",
           ].join(" ")}
           style={summaryClampStyle}
         >
@@ -231,17 +248,17 @@ function SectionToggle({
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center justify-between gap-3 rounded-2xl px-1 py-1 text-left"
+      className={`${sectionHeaderButtonClassName} hover:bg-white/42`}
       aria-expanded={isExpanded}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className={sectionHeaderTitleRowClassName}>
         <p className="text-sm font-semibold text-ink">{label}</p>
-        <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-cocoa shadow-sm">
+        <span className={sectionHeaderCountClassName}>
           {count}
         </span>
       </div>
 
-      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-cocoa shadow-sm">
+      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-cocoa shadow-sm">
         <svg
           aria-hidden="true"
           viewBox="0 0 16 16"
@@ -284,15 +301,15 @@ function EmptyDishState({
       : t("dishes.library.empty.archived.description");
 
   return (
-    <SurfaceCard className="overflow-hidden bg-gradient-to-br from-white via-cream to-almond p-0">
-      <div className="px-5 py-6">
-        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blush text-sm font-bold text-ink">
+    <SurfaceCard className={stateSurfaceClassName}>
+      <div className={stateSurfaceBodyClassName}>
+        <div className={stateSurfaceBadgeClassName}>
           {t("navigation.badges.dishLibrary")}
         </div>
-        <h2 className="mt-4 font-[var(--font-heading)] text-3xl font-semibold text-ink">
+        <h2 className={stateSurfaceTitleClassName}>
           {title}
         </h2>
-        <p className="mt-3 max-w-[32ch] text-sm leading-6 text-cocoa">{description}</p>
+        <p className={stateSurfaceDescriptionClassName}>{description}</p>
         {showAddDishAction ? (
           <Link
             href="/dishes/new"
@@ -397,17 +414,17 @@ export function DishListScreen({
         description={t("dishes.library.header.description")}
       />
 
-      <section className="rounded-[1.75rem] border border-white/80 bg-gradient-to-br from-white via-cream to-almond px-4 py-4 shadow-card">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
+      <section className={topSurfaceClassName}>
+        <div className={topSurfaceStackClassName}>
+          <div className={topSurfaceIntroClassName}>
+            <div className="flex flex-wrap items-center gap-3">
               <ModeSwitch mode={mode} />
-              <span className="rounded-full bg-white/85 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
+              <span className={countPillClassName}>
                 {t("dishes.library.count", { count: initialDishes.length })}
               </span>
             </div>
 
-            <p className="max-w-[34ch] text-sm leading-6 text-cocoa">
+            <p className={topSurfaceDescriptionClassName}>
               {mode === "active"
                 ? t("dishes.library.activeDescription")
                 : t("dishes.library.archivedDescription")}
@@ -417,14 +434,12 @@ export function DishListScreen({
           {showAddDishAction ? (
             <Link
               href="/dishes/new"
-              className="inline-flex rounded-[1.2rem] bg-clay px-4 py-3 text-sm font-semibold text-white shadow-sm"
+              className="inline-flex self-start rounded-[1.2rem] bg-clay px-4 py-3 text-sm font-semibold text-white shadow-sm"
             >
               {t("dishes.actions.addDish")}
             </Link>
           ) : null}
-        </div>
 
-        <div className="mt-4">
           <SearchField
             value={query}
             onChange={setQuery}
@@ -436,7 +451,7 @@ export function DishListScreen({
       </section>
 
       {errorMessage ? (
-        <SurfaceCard className="border-clay/20 bg-white/90">
+        <SurfaceCard className={errorSurfaceClassName}>
           <p className="text-sm font-semibold text-ink">
             {t("dishes.library.errorTitle")}
           </p>
@@ -453,12 +468,12 @@ export function DishListScreen({
       ) : null}
 
       {!errorMessage && hasResults ? (
-        <div className="space-y-4">
+        <div className="space-y-5">
           {sections.map((section) => {
             const isExpanded = hasSearchQuery ? true : !collapsedSections[section.category];
 
             return (
-              <section key={section.category} className="space-y-2">
+              <section key={section.category} className="space-y-2.5">
                 <SectionToggle
                   label={section.label}
                   count={section.dishes.length}
@@ -467,7 +482,7 @@ export function DishListScreen({
                 />
 
                 {isExpanded ? (
-                  <div className="space-y-2">
+                  <div className={sectionContentStackClassName}>
                     {section.dishes.map((dish) => (
                       <DishCard
                         key={dish.id}

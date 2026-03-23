@@ -1,5 +1,6 @@
 "use client";
 
+import { errorSurfaceClassName } from "@/components/ui/presentation";
 import { useLocale } from "@/lib/i18n/provider";
 import { getShoppingListCopy } from "@/lib/shopping-list-copy";
 
@@ -15,7 +16,7 @@ export default function ProductsError({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[1.5rem] border border-white/80 bg-white/90 p-4 shadow-card">
+      <section className={`rounded-[1.5rem] border p-4 shadow-card ${errorSurfaceClassName}`}>
         <p className="text-sm font-semibold text-ink">{copy.error.title}</p>
         <p className="mt-2 text-sm leading-6 text-cocoa">
           {error.message || copy.error.description}

@@ -3,6 +3,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import {
+  backActionClassName,
+  inlineNoticeClassName,
+  metaPillClassName,
+} from "@/components/ui/presentation";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import type { DishDetails } from "@/lib/dish-crud";
@@ -14,11 +19,7 @@ import {
 } from "@/lib/dishes";
 
 function MetadataBadge({ children }: { children: ReactNode }) {
-  return (
-    <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-cocoa shadow-sm">
-      {children}
-    </span>
-  );
+  return <span className={metaPillClassName}>{children}</span>;
 }
 
 function Section({
@@ -215,7 +216,7 @@ export function DishDetailsScreen({
       <div className="flex items-center gap-3 text-sm font-semibold text-cocoa">
         <Link
           href={getDishLibraryHref(mode)}
-          className="rounded-full bg-white/90 px-3 py-2 shadow-sm"
+          className={backActionClassName}
         >
           {t("dishes.navigation.backToLibrary")}
         </Link>
@@ -244,7 +245,7 @@ export function DishDetailsScreen({
         </div>
 
         {dish.isArchived ? (
-          <div className="rounded-[1.25rem] border border-leaf/15 bg-white/70 px-4 py-3">
+          <div className={inlineNoticeClassName}>
             <p className="text-sm font-semibold text-ink">
               {t("dishes.details.archivedNotice.title")}
             </p>

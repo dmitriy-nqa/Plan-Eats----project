@@ -761,6 +761,7 @@ function pickProjectionIngredientName(contributions: ShoppingListContributionRow
 async function materializeProjectionRows(args: {
   shoppingListId: string;
   sourceKeys: string[];
+  fallbackContributionDrafts?: SlotContributionDraft[];
 }) {
   const sourceKeys = uniqueStrings(args.sourceKeys);
 
@@ -774,6 +775,7 @@ async function materializeProjectionRows(args: {
     fetchAutoItemRows(args.shoppingListId, sourceKeys),
   ]);
   const contributionsBySourceKey = new Map<string, ShoppingListContributionRow[]>();
+  const fallbackContributionsBySourceKey = new Map<string, ShoppingListContributionRow[]>();
   const existingAutoItemsBySourceKey = new Map<string, ShoppingListItemRow>();
   const adjustmentsBySourceKey = new Map<string, ShoppingListAdjustmentRow>();
 
@@ -785,6 +787,30 @@ async function materializeProjectionRows(args: {
     const currentContributions = contributionsBySourceKey.get(contribution.source_key) ?? [];
     currentContributions.push(contribution);
     contributionsBySourceKey.set(contribution.source_key, currentContributions);
+  }
+
+  for (const draft of args.fallbackContributionDrafts ?? []) {
+    if (!sourceKeys.includes(draft.sourceKey)) {
+      continue;
+    }
+
+    const currentContributions = fallbackContributionsBySourceKey.get(draft.sourceKey) ?? [];
+    currentContributions.push({
+      id: `draft:${draft.contributionKey}`,
+      shopping_list_id: args.shoppingListId,
+      meal_plan_id: "",
+      contribution_key: draft.contributionKey,
+      source_key: draft.sourceKey,
+      day_index: draft.dayIndex,
+      meal_type: draft.mealType,
+      dish_id: draft.dishId,
+      product_id: draft.productId,
+      ingredient_name: draft.ingredientName,
+      normalized_name: draft.normalizedName,
+      quantity: draft.quantity,
+      unit: draft.unit,
+    });
+    fallbackContributionsBySourceKey.set(draft.sourceKey, currentContributions);
   }
 
   for (const autoItem of existingAutoItems) {
@@ -811,7 +837,12 @@ async function materializeProjectionRows(args: {
   const deleteSourceKeys: string[] = [];
 
   for (const sourceKey of sourceKeys) {
-    const groupedContributions = contributionsBySourceKey.get(sourceKey) ?? [];
+    // Supabase writes can be briefly non-monotonic for an immediate read-after-upsert.
+    // Prefer the fresh in-memory draft set for the current sync scope when available.
+    const groupedContributions =
+      fallbackContributionsBySourceKey.get(sourceKey) ??
+      contributionsBySourceKey.get(sourceKey) ??
+      [];
     const adjustment = adjustmentsBySourceKey.get(sourceKey);
     const existingItem = existingAutoItemsBySourceKey.get(sourceKey);
 
@@ -957,6 +988,7 @@ async function upsertContributionRows(args: {
   await materializeProjectionRows({
     shoppingListId: args.shoppingListId,
     sourceKeys: affectedSourceKeys,
+    fallbackContributionDrafts: args.nextContributionDrafts,
   });
 }
 

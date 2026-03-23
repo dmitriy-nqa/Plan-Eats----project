@@ -3,6 +3,27 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useState } from "react";
 
+import {
+  countPillClassName,
+  errorSurfaceClassName,
+  inlineInfoClassName,
+  sectionContentStackClassName,
+  sectionHeaderButtonClassName,
+  sectionHeaderTitleRowClassName,
+  sectionSurfaceClassName,
+  sectionSurfaceMutedClassName,
+  secondaryActionClassName,
+  stateSurfaceBadgeClassName,
+  stateSurfaceBodyClassName,
+  stateSurfaceClassName,
+  stateSurfaceDescriptionClassName,
+  stateSurfaceTitleClassName,
+  topSurfaceClassName,
+  topSurfaceDescriptionClassName,
+  topSurfaceIntroClassName,
+  topSurfaceStackClassName,
+  topSurfaceSupportingTextClassName,
+} from "@/components/ui/presentation";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import {
@@ -132,21 +153,23 @@ function SectionToggle({
   tone?: "primary" | "secondary";
 }) {
   const countLabelClass =
-    tone === "secondary" ? "text-cocoa/68" : "text-cocoa/76";
+    tone === "secondary"
+      ? `${countPillClassName} bg-white/72 text-cocoa/72 shadow-none`
+      : countPillClassName;
 
   return (
     <button
       type="button"
       onClick={onToggle}
       className={[
-        "flex w-full items-center justify-between gap-3 rounded-[1.2rem] px-1 py-2 text-left transition",
+        `${sectionHeaderButtonClassName} py-2`,
         tone === "secondary" ? "text-cocoa hover:bg-white/40" : "hover:bg-white/42",
       ].join(" ")}
       aria-expanded={isExpanded}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className={sectionHeaderTitleRowClassName}>
         <p className="text-sm font-semibold text-ink">{label}</p>
-        <span className={`text-xs font-medium ${countLabelClass}`}>{count}</span>
+        <span className={countLabelClass}>{count}</span>
       </div>
 
       <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-cocoa shadow-sm">
@@ -189,13 +212,13 @@ function ShoppingListRow({
   return (
     <div
       className={[
-        "rounded-[1.25rem] border px-3 py-3 shadow-sm transition",
+        "rounded-[1.35rem] border px-3.5 py-3.5 shadow-sm transition",
         item.isChecked
           ? "border-white/70 bg-white/72"
           : "border-white/80 bg-white/92",
       ].join(" ")}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3.5">
         <div className="flex w-12 shrink-0 flex-col items-center gap-1.5 pt-0.5">
           <form action={toggleCheckedAction}>
             <input type="hidden" name="itemId" value={item.id} />
@@ -219,34 +242,32 @@ function ShoppingListRow({
           </span>
         </div>
 
-        <div className="min-w-0 flex-1 space-y-2.5">
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <p
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="min-w-0 flex-1">
+            <p
+              className={[
+                "break-words text-[15px] font-semibold leading-5 text-ink",
+                item.isChecked ? "text-cocoa" : "",
+              ].join(" ")}
+            >
+              {item.ingredientName}
+            </p>
+
+            <div className="mt-1.5 flex flex-wrap items-center gap-2.5">
+              <span
                 className={[
-                  "break-words text-[15px] font-semibold leading-5 text-ink",
-                  item.isChecked ? "text-cocoa" : "",
+                  "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                  item.isChecked ? "bg-white/84 text-cocoa" : "bg-sand/68 text-cocoa",
                 ].join(" ")}
               >
-                {item.ingredientName}
-              </p>
+                {item.quantity} {item.unit}
+              </span>
 
-              <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <span
-                  className={[
-                    "rounded-full px-2.5 py-1 text-xs font-semibold",
-                    item.isChecked ? "bg-white/88 text-cocoa" : "bg-sand/70 text-cocoa",
-                  ].join(" ")}
-                >
-                  {item.quantity} {item.unit}
-                </span>
-
-                <p className="text-xs leading-5 text-cocoa/72">{sourceText}</p>
-              </div>
+              <p className="text-[11px] leading-5 text-cocoa/70">{sourceText}</p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+          <div className="flex flex-wrap items-center gap-4 pt-0.5 text-xs font-semibold">
             <Link
               href={`/products/${item.id}/edit`}
               className="text-cocoa transition hover:text-ink"
@@ -275,18 +296,18 @@ function EmptyState({ hasMealPlan }: { hasMealPlan: boolean }) {
   const copy = getShoppingListCopy(locale);
 
   return (
-    <SurfaceCard className="overflow-hidden bg-gradient-to-br from-white via-cream to-almond p-0">
-      <div className="px-5 py-6">
-        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blush text-sm font-bold text-ink">
+    <SurfaceCard className={stateSurfaceClassName}>
+      <div className={stateSurfaceBodyClassName}>
+        <div className={stateSurfaceBadgeClassName}>
           PR
         </div>
-        <h2 className="mt-4 font-[var(--font-heading)] text-3xl font-semibold text-ink">
+        <h2 className={stateSurfaceTitleClassName}>
           {copy.empty.title}
         </h2>
-        <p className="mt-3 max-w-[34ch] text-sm leading-6 text-cocoa">
+        <p className={stateSurfaceDescriptionClassName}>
           {copy.empty.description}
         </p>
-        <p className="mt-3 rounded-2xl bg-white/85 px-4 py-3 text-sm leading-6 text-cocoa">
+        <p className={`mt-4 ${inlineInfoClassName}`}>
           {copy.empty.manualHint}
         </p>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
@@ -298,7 +319,7 @@ function EmptyState({ hasMealPlan }: { hasMealPlan: boolean }) {
           </Link>
           <Link
             href="/"
-            className="inline-flex justify-center rounded-2xl border border-clay/25 bg-white px-4 py-3 text-sm font-semibold text-cocoa"
+            className={secondaryActionClassName}
           >
             {copy.actions.backToWeeklyMenu}
           </Link>
@@ -387,49 +408,51 @@ export function ShoppingListScreen({
         description={copy.header.description}
       />
 
-      <SurfaceCard className="bg-gradient-to-br from-white via-cream to-almond">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-cocoa">{copy.weekCard.title}</p>
-            <p className="mt-1 text-sm leading-6 text-cocoa">
-              {copy.flow.productsTop.stateDescriptions[flowState]}
-            </p>
-            <p className="mt-3 text-xs font-medium text-cocoa/78">
-              {copy.flow.productsTop.supporting}
-            </p>
+      <SurfaceCard className={`${topSurfaceClassName} p-5`}>
+        <div className={topSurfaceStackClassName}>
+          <div className="space-y-4">
+            <div className={topSurfaceIntroClassName}>
+              <p className="text-sm font-semibold text-cocoa">{copy.weekCard.title}</p>
+              <p className={topSurfaceDescriptionClassName}>
+                {copy.flow.productsTop.stateDescriptions[flowState]}
+              </p>
+              <p className={topSurfaceSupportingTextClassName}>
+                {copy.flow.productsTop.supporting}
+              </p>
+            </div>
+
+            <Link
+              href="/products/new"
+              className="inline-flex self-start rounded-[1.2rem] bg-clay px-4 py-3 text-sm font-semibold text-white shadow-sm"
+            >
+              {copy.actions.addItem}
+            </Link>
           </div>
 
-          <Link
-            href="/products/new"
-            className="inline-flex shrink-0 rounded-[1.2rem] bg-clay px-4 py-3 text-sm font-semibold text-white shadow-sm"
-          >
-            {copy.actions.addItem}
-          </Link>
-        </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className={`rounded-[1.2rem] px-4 py-3 ${toBuySummaryClass}`}>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
+                {copy.sections.toBuy}
+              </p>
+              <p className={`mt-2 text-lg font-semibold ${toBuyValueClass}`}>
+                {formatShoppingListCopy(copy.summary.toBuy, { count: toBuyItems.length })}
+              </p>
+            </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className={`rounded-[1.2rem] px-4 py-3 ${toBuySummaryClass}`}>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
-              {copy.sections.toBuy}
-            </p>
-            <p className={`mt-2 text-lg font-semibold ${toBuyValueClass}`}>
-              {formatShoppingListCopy(copy.summary.toBuy, { count: toBuyItems.length })}
-            </p>
-          </div>
-
-          <div className={`rounded-[1.2rem] px-4 py-3 ${boughtSummaryClass}`}>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
-              {copy.sections.bought}
-            </p>
-            <p className={`mt-2 text-lg font-semibold ${boughtValueClass}`}>
-              {formatShoppingListCopy(copy.summary.bought, { count: boughtItems.length })}
-            </p>
+            <div className={`rounded-[1.2rem] px-4 py-3 ${boughtSummaryClass}`}>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
+                {copy.sections.bought}
+              </p>
+              <p className={`mt-2 text-lg font-semibold ${boughtValueClass}`}>
+                {formatShoppingListCopy(copy.summary.bought, { count: boughtItems.length })}
+              </p>
+            </div>
           </div>
         </div>
       </SurfaceCard>
 
       {errorMessage ? (
-        <SurfaceCard className="border-clay/20 bg-white/90">
+        <SurfaceCard className={errorSurfaceClassName}>
           <p className="text-sm font-semibold text-ink">{copy.error.title}</p>
           <p className="mt-2 text-sm leading-6 text-cocoa">{errorMessage || copy.error.description}</p>
           <Link
@@ -445,7 +468,7 @@ export function ShoppingListScreen({
 
       {!errorMessage && hasItems ? (
         <div className="space-y-5">
-          <SurfaceCard className="space-y-3 bg-white/78">
+          <SurfaceCard className={sectionSurfaceClassName}>
             <SectionToggle
               label={copy.sections.toBuy}
               count={toBuyItems.length}
@@ -455,7 +478,7 @@ export function ShoppingListScreen({
 
             {isToBuyExpanded ? (
               toBuyItems.length > 0 ? (
-                <div className="space-y-2">
+                <div className={sectionContentStackClassName}>
                   {toBuyItems.map((item) => (
                     <ShoppingListRow
                       key={item.id}
@@ -480,7 +503,7 @@ export function ShoppingListScreen({
           </SurfaceCard>
 
           {boughtItems.length > 0 ? (
-            <SurfaceCard className="space-y-3 border-white/70 bg-cream/72">
+            <SurfaceCard className={sectionSurfaceMutedClassName}>
               <SectionToggle
                 label={copy.sections.bought}
                 count={boughtItems.length}
@@ -490,7 +513,7 @@ export function ShoppingListScreen({
               />
 
               {isBoughtExpanded ? (
-                <div className="space-y-2">
+                <div className={sectionContentStackClassName}>
                   {boughtItems.map((item) => (
                     <ShoppingListRow
                       key={item.id}

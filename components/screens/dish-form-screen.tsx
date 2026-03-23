@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useActionState, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
+import {
+  backActionClassName,
+  countPillClassName,
+  secondaryActionClassName,
+} from "@/components/ui/presentation";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import {
@@ -508,7 +513,7 @@ export function DishFormScreen({
       <div className="flex items-center gap-3 text-sm font-semibold text-cocoa">
         <Link
           href={getDishLibraryHref(libraryMode)}
-          className="rounded-full bg-white/90 px-3 py-2 shadow-sm"
+          className={backActionClassName}
         >
           {t("dishes.navigation.backToLibrary")}
         </Link>
@@ -593,7 +598,7 @@ export function DishFormScreen({
               {t("dishes.form.ingredients.description")}
             </p>
           </div>
-          <span className="rounded-full bg-sand px-3 py-1 text-xs font-semibold text-cocoa">
+          <span className={countPillClassName}>
             {t("dishes.form.ingredients.rowsCount", { count: form.ingredients.length })}
           </span>
         </div>
@@ -628,7 +633,7 @@ export function DishFormScreen({
           <SubmitDishButton mode={formMode} />
           <Link
             href={getDishLibraryHref(libraryMode)}
-            className="rounded-2xl border border-clay/30 px-4 py-3 text-center text-sm font-semibold text-cocoa"
+            className={secondaryActionClassName}
           >
             {t("common.actions.cancel")}
           </Link>

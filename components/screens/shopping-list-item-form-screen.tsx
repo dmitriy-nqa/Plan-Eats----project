@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
+import {
+  backActionClassName,
+  infoCardClassName,
+  secondaryActionClassName,
+} from "@/components/ui/presentation";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { useLocale } from "@/lib/i18n/provider";
@@ -126,7 +131,7 @@ export function ShoppingListItemFormScreen({
         <div className="flex items-center gap-3 text-sm font-semibold text-cocoa">
           <Link
             href="/products"
-            className="rounded-full bg-white/90 px-3 py-2 shadow-sm"
+            className={backActionClassName}
           >
             {copy.form.backToProducts}
           </Link>
@@ -138,7 +143,7 @@ export function ShoppingListItemFormScreen({
           description={mode === "add" ? copy.form.addDescription : copy.form.editDescription}
         />
 
-        <SurfaceCard className="bg-white/80">
+        <SurfaceCard className={infoCardClassName}>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
             {copy.form.sourceCardLabel}
           </p>
@@ -202,7 +207,7 @@ export function ShoppingListItemFormScreen({
             <SubmitButton mode={mode} />
             <Link
               href="/products"
-              className="rounded-2xl border border-clay/30 px-4 py-3 text-center text-sm font-semibold text-cocoa"
+              className={secondaryActionClassName}
             >
               {copy.form.backToProducts}
             </Link>
