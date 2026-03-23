@@ -395,6 +395,14 @@ async function assertActiveDishAvailable(dishId: string) {
   }
 }
 
+async function assertActiveDishesAvailable(dishIds: string[]) {
+  const uniqueDishIds = [...new Set(dishIds)];
+
+  for (const dishId of uniqueDishIds) {
+    await assertActiveDishAvailable(dishId);
+  }
+}
+
 async function updateSlotPrimaryDish(args: {
   slotId: string;
   dishId: string;
@@ -408,6 +416,34 @@ async function updateSlotPrimaryDish(args: {
     .eq("id", args.slotId);
 
   if (error) {
+    throw error;
+  }
+}
+
+async function insertSlotItems(args: {
+  familyId: string;
+  slotId: string;
+  dishIds: string[];
+}) {
+  if (args.dishIds.length === 0) {
+    return;
+  }
+
+  const supabase = getSupabaseServerClient();
+  const { error } = await supabase.from("meal_plan_slot_items").insert(
+    args.dishIds.map((dishId, index) => ({
+      family_id: args.familyId,
+      slot_id: args.slotId,
+      dish_id: dishId,
+      sort_order: index,
+    })),
+  );
+
+  if (error) {
+    if (error.code === "23505") {
+      throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
+    }
+
     throw error;
   }
 }
@@ -435,6 +471,43 @@ async function syncShoppingForSlot(args: {
     });
   } catch (error) {
     console.error("Failed to sync shopping list after weekly menu change", error);
+  }
+}
+
+async function syncShoppingForMealPlan(args: {
+  mealPlanId: string;
+  expectedSourceSlots?: Array<{
+    dayIndex: number;
+    mealType: MealType;
+    expectedDishIds: string[];
+  }>;
+}) {
+  try {
+    const {
+      markShoppingListSourceChangedByMealPlanId,
+      syncShoppingListByMealPlanId,
+      waitForMealPlanSlotSourceVisibility,
+    } = await import("@/lib/shopping-list-crud");
+    const prefetchedSlots =
+      args.expectedSourceSlots && args.expectedSourceSlots.length > 0
+        ? await waitForMealPlanSlotSourceVisibility({
+            mealPlanId: args.mealPlanId,
+            targets: args.expectedSourceSlots,
+          })
+        : undefined;
+
+    await markShoppingListSourceChangedByMealPlanId(args.mealPlanId);
+    await syncShoppingListByMealPlanId(
+      args.mealPlanId,
+      {
+        type: "full",
+      },
+      {
+        prefetchedSlots,
+      },
+    );
+  } catch (error) {
+    console.error("Failed to fully sync shopping list after weekly menu reuse", error);
   }
 }
 
@@ -751,10 +824,15 @@ export async function replaceCurrentWeekSlotItemDish(args: {
       mealType: normalizedMealType,
       dishId: args.dishId,
     });
-    await syncShoppingForSlot({
+    await syncShoppingForMealPlan({
       mealPlanId: mealPlan.id,
-      dayIndex: args.dayIndex,
-      mealType: normalizedMealType,
+      expectedSourceSlots: [
+        {
+          dayIndex: args.dayIndex,
+          mealType: normalizedMealType,
+          expectedDishIds: [args.dishId],
+        },
+      ],
     });
     return;
   }
@@ -802,10 +880,26 @@ export async function replaceCurrentWeekSlotItemDish(args: {
     });
   }
 
-  await syncShoppingForSlot({
+  const expectedDishIds = sortSlotItemRows(
+    persistedItems.map((item) =>
+      item.id === args.slotItemId
+        ? {
+            ...item,
+            dish_id: args.dishId,
+          }
+        : item,
+    ),
+  ).map((item) => item.dish_id);
+
+  await syncShoppingForMealPlan({
     mealPlanId: mealPlan.id,
-    dayIndex: args.dayIndex,
-    mealType: normalizedMealType,
+    expectedSourceSlots: [
+      {
+        dayIndex: args.dayIndex,
+        mealType: normalizedMealType,
+        expectedDishIds,
+      },
+    ],
   });
 }
 
@@ -903,6 +997,251 @@ export async function removeCurrentWeekSlotItem(args: {
   return {
     slotIsEmpty: remainingItems.length === 0,
   };
+}
+
+export async function copyCurrentWeekSlotItem(args: {
+  sourceDayIndex: number;
+  sourceMealType: string;
+  slotItemId: string;
+  targetDayIndex: number;
+  targetMealType: string;
+}) {
+  assertDayIndex(args.sourceDayIndex);
+  assertDayIndex(args.targetDayIndex);
+  const sourceMealType = assertMealType(args.sourceMealType);
+  const targetMealType = assertMealType(args.targetMealType);
+
+  if (!args.slotItemId) {
+    throw new Error("Missing slot item id for reuse");
+  }
+
+  const { familyId, mealPlan } = await fetchCurrentWeekMealPlan();
+
+  if (!mealPlan) {
+    throw new WeeklyMenuMutationError("slot_not_found");
+  }
+
+  const sourceSlot = await fetchCurrentWeekSlotRow({
+    mealPlanId: mealPlan.id,
+    dayIndex: args.sourceDayIndex,
+    mealType: sourceMealType,
+  });
+
+  if (!sourceSlot) {
+    throw new WeeklyMenuMutationError("slot_not_found");
+  }
+
+  const sourceItems = await ensurePersistedSlotItemsForSlot({
+    familyId,
+    slot: sourceSlot,
+  });
+
+  if (!sourceItems) {
+    throw new Error("Slot item storage is not available yet.");
+  }
+
+  const sourceItem = sourceItems.find((item) => item.id === args.slotItemId);
+
+  if (!sourceItem) {
+    throw new WeeklyMenuMutationError("slot_item_not_found");
+  }
+
+  await assertActiveDishAvailable(sourceItem.dish_id);
+
+  const targetSlot = await fetchCurrentWeekSlotRow({
+    mealPlanId: mealPlan.id,
+    dayIndex: args.targetDayIndex,
+    mealType: targetMealType,
+  });
+
+  if (!targetSlot) {
+    const createdSlot = await createCurrentWeekSlotRow({
+      familyId,
+      mealPlanId: mealPlan.id,
+      dayIndex: args.targetDayIndex,
+      mealType: targetMealType,
+      dishId: sourceItem.dish_id,
+    });
+
+    await insertSlotItems({
+      familyId,
+      slotId: createdSlot.id,
+      dishIds: [sourceItem.dish_id],
+    });
+
+    await syncShoppingForMealPlan({
+      mealPlanId: mealPlan.id,
+      expectedSourceSlots: [
+        {
+          dayIndex: args.targetDayIndex,
+          mealType: targetMealType,
+          expectedDishIds: [sourceItem.dish_id],
+        },
+      ],
+    });
+    return;
+  }
+
+  const targetItems = await ensurePersistedSlotItemsForSlot({
+    familyId,
+    slot: targetSlot,
+  });
+
+  if (!targetItems) {
+    throw new Error("Slot item storage is not available yet.");
+  }
+
+  if (targetItems.some((item) => item.dish_id === sourceItem.dish_id)) {
+    throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
+  }
+
+  const nextSortOrder =
+    targetItems.length === 0
+      ? 0
+      : Math.max(...targetItems.map((item) => item.sort_order)) + 1;
+  const supabase = getSupabaseServerClient();
+  const { error } = await supabase.from("meal_plan_slot_items").insert({
+    family_id: familyId,
+    slot_id: targetSlot.id,
+    dish_id: sourceItem.dish_id,
+    sort_order: nextSortOrder,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
+    }
+
+    throw error;
+  }
+
+  if (nextSortOrder === 0) {
+    await updateSlotPrimaryDish({
+      slotId: targetSlot.id,
+      dishId: sourceItem.dish_id,
+    });
+  }
+
+  await syncShoppingForMealPlan({
+    mealPlanId: mealPlan.id,
+    expectedSourceSlots: [
+      {
+        dayIndex: args.targetDayIndex,
+        mealType: targetMealType,
+        expectedDishIds: [...targetItems.map((item) => item.dish_id), sourceItem.dish_id],
+      },
+    ],
+  });
+}
+
+export async function copyCurrentWeekSlot(args: {
+  sourceDayIndex: number;
+  sourceMealType: string;
+  targetDayIndex: number;
+  targetMealType: string;
+}) {
+  assertDayIndex(args.sourceDayIndex);
+  assertDayIndex(args.targetDayIndex);
+  const sourceMealType = assertMealType(args.sourceMealType);
+  const targetMealType = assertMealType(args.targetMealType);
+
+  const { familyId, mealPlan } = await fetchCurrentWeekMealPlan();
+
+  if (!mealPlan) {
+    throw new WeeklyMenuMutationError("slot_not_found");
+  }
+
+  const sourceSlot = await fetchCurrentWeekSlotRow({
+    mealPlanId: mealPlan.id,
+    dayIndex: args.sourceDayIndex,
+    mealType: sourceMealType,
+  });
+
+  if (!sourceSlot) {
+    throw new WeeklyMenuMutationError("slot_not_found");
+  }
+
+  const sourceItems = await ensurePersistedSlotItemsForSlot({
+    familyId,
+    slot: sourceSlot,
+  });
+
+  if (!sourceItems || sourceItems.length === 0) {
+    throw new WeeklyMenuMutationError("slot_not_found");
+  }
+
+  const orderedSourceItems = sortSlotItemRows(sourceItems);
+  const sourceDishIds = orderedSourceItems.map((item) => item.dish_id);
+
+  await assertActiveDishesAvailable(sourceDishIds);
+
+  const targetSlot = await fetchCurrentWeekSlotRow({
+    mealPlanId: mealPlan.id,
+    dayIndex: args.targetDayIndex,
+    mealType: targetMealType,
+  });
+
+  if (!targetSlot) {
+    const createdSlot = await createCurrentWeekSlotRow({
+      familyId,
+      mealPlanId: mealPlan.id,
+      dayIndex: args.targetDayIndex,
+      mealType: targetMealType,
+      dishId: sourceDishIds[0],
+    });
+
+    await insertSlotItems({
+      familyId,
+      slotId: createdSlot.id,
+      dishIds: sourceDishIds,
+    });
+
+    await syncShoppingForMealPlan({
+      mealPlanId: mealPlan.id,
+      expectedSourceSlots: [
+        {
+          dayIndex: args.targetDayIndex,
+          mealType: targetMealType,
+          expectedDishIds: sourceDishIds,
+        },
+      ],
+    });
+    return;
+  }
+
+  const targetItems = await ensurePersistedSlotItemsForSlot({
+    familyId,
+    slot: targetSlot,
+  });
+
+  if (!targetItems) {
+    throw new Error("Slot item storage is not available yet.");
+  }
+
+  if (targetItems.length > 0) {
+    throw new WeeklyMenuMutationError("slot_not_empty");
+  }
+
+  await insertSlotItems({
+    familyId,
+    slotId: targetSlot.id,
+    dishIds: sourceDishIds,
+  });
+  await updateSlotPrimaryDish({
+    slotId: targetSlot.id,
+    dishId: sourceDishIds[0],
+  });
+
+  await syncShoppingForMealPlan({
+    mealPlanId: mealPlan.id,
+    expectedSourceSlots: [
+      {
+        dayIndex: args.targetDayIndex,
+        mealType: targetMealType,
+        expectedDishIds: sourceDishIds,
+      },
+    ],
+  });
 }
 
 export async function assignDishToCurrentWeekSlot({

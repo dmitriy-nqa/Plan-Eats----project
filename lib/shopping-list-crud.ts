@@ -460,6 +460,57 @@ async function fetchMealPlanSlots(mealPlanId: string) {
   });
 }
 
+function hasMatchingDishIds(actualDishIds: string[], expectedDishIds: string[]) {
+  if (actualDishIds.length !== expectedDishIds.length) {
+    return false;
+  }
+
+  const sortedActualDishIds = [...actualDishIds].sort();
+  const sortedExpectedDishIds = [...expectedDishIds].sort();
+
+  return sortedActualDishIds.every((dishId, index) => dishId === sortedExpectedDishIds[index]);
+}
+
+export async function waitForMealPlanSlotSourceVisibility(args: {
+  mealPlanId: string;
+  targets: Array<{
+    dayIndex: number;
+    mealType: MealType;
+    expectedDishIds: string[];
+  }>;
+  maxAttempts?: number;
+  delayMs?: number;
+}) {
+  const maxAttempts = Math.max(args.maxAttempts ?? 6, 1);
+  const delayMs = Math.max(args.delayMs ?? 40, 0);
+  let lastSlots: Awaited<ReturnType<typeof fetchMealPlanSlots>> = [];
+  let allTargetsVisible = false;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    lastSlots = await fetchMealPlanSlots(args.mealPlanId);
+    allTargetsVisible = args.targets.every((target) => {
+      const actualDishIds = lastSlots
+        .filter(
+          (slot) =>
+            slot.dayIndex === target.dayIndex && slot.mealType === target.mealType,
+        )
+        .map((slot) => slot.dishId);
+
+      return hasMatchingDishIds(actualDishIds, target.expectedDishIds);
+    });
+
+    if (allTargetsVisible) {
+      return lastSlots;
+    }
+
+    if (attempt < maxAttempts - 1 && delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return allTargetsVisible ? lastSlots : undefined;
+}
+
 async function fetchDishIngredientsByDishIds(dishIds: string[]) {
   if (dishIds.length === 0) {
     return new Map<string, DishIngredientRow[]>();
@@ -959,10 +1010,13 @@ export async function markCurrentWeekShoppingListSourceChanged() {
 export async function syncShoppingListByMealPlanId(
   mealPlanId: string,
   scope: SyncScope = { type: "full" },
+  options?: {
+    prefetchedSlots?: Awaited<ReturnType<typeof fetchMealPlanSlots>>;
+  },
 ) {
   const shoppingList = await ensureShoppingListByMealPlanId(mealPlanId);
   const [slots, productMaps] = await Promise.all([
-    fetchMealPlanSlots(mealPlanId),
+    options?.prefetchedSlots ? Promise.resolve(options.prefetchedSlots) : fetchMealPlanSlots(mealPlanId),
     fetchProductResolutionMaps(),
   ]);
   const targetSlots =

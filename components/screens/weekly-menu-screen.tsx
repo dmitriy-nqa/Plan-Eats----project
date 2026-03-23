@@ -32,13 +32,36 @@ type WeeklyMenuSlotMutationResult =
     }
   | {
       status: "error";
-      code: "duplicate_dish_in_slot" | "slot_item_not_found" | "slot_not_found" | "failed";
+      code:
+        | "duplicate_dish_in_slot"
+        | "slot_item_not_found"
+        | "slot_not_found"
+        | "slot_not_empty"
+        | "dish_not_available"
+        | "failed";
     };
 
 type WeeklyMenuSlotMutationErrorCode = Extract<
   WeeklyMenuSlotMutationResult,
   { status: "error" }
 >["code"];
+
+type ReuseMode = "item" | "slot";
+
+type ReuseTargetOption = {
+  dayIndex: number;
+  mealType: MealType;
+  mealLabel: string;
+  isAvailable: boolean;
+  statusLabel: string;
+  summaryLabel: string;
+};
+
+type ReuseTargetDay = {
+  day: WeeklyMenuDayView;
+  availableCount: number;
+  targets: ReuseTargetOption[];
+};
 
 const twoLineClampStyle = {
   display: "-webkit-box",
@@ -73,6 +96,73 @@ function getDishNotePresentation(note?: string) {
 
 function getInitialActiveDayIndex(days: WeeklyMenuDayView[]) {
   return days.find((day) => day.isToday)?.dayIndex ?? days[0]?.dayIndex ?? 0;
+}
+
+function getReuseTargetSummary(slot: WeeklyMenuSlotView, t: ReturnType<typeof useT>) {
+  if (slot.items.length === 0) {
+    return t("weeklyMenu.reuse.emptyTarget");
+  }
+
+  return t("weeklyMenu.reuse.filledTarget", {
+    count: slot.items.length,
+  });
+}
+
+function buildReuseTargetDays(args: {
+  days: WeeklyMenuDayView[];
+  sourceDayIndex: number;
+  sourceMealType: MealType;
+  mode: ReuseMode;
+  sourceDishId?: string;
+  t: ReturnType<typeof useT>;
+}) {
+  return args.days.map((day) => {
+    const targets = day.slots.map((slot) => {
+      const isSourceSlot =
+        day.dayIndex === args.sourceDayIndex && slot.mealType === args.sourceMealType;
+      let isAvailable = true;
+      let statusLabel = getReuseTargetSummary(slot, args.t);
+
+      if (isSourceSlot) {
+        isAvailable = false;
+        statusLabel = args.t("weeklyMenu.reuse.currentSlot");
+      } else if (args.mode === "slot") {
+        if (slot.items.length > 0) {
+          isAvailable = false;
+          statusLabel = args.t("weeklyMenu.reuse.targetRequiresEmpty");
+        }
+      } else if (
+        args.sourceDishId &&
+        slot.items.some((item) => item.dishId === args.sourceDishId)
+      ) {
+        isAvailable = false;
+        statusLabel = args.t("weeklyMenu.reuse.targetAlreadyContainsDish");
+      }
+
+      return {
+        dayIndex: day.dayIndex,
+        mealType: slot.mealType,
+        mealLabel: slot.mealLabel,
+        isAvailable,
+        statusLabel,
+        summaryLabel: getReuseTargetSummary(slot, args.t),
+      } satisfies ReuseTargetOption;
+    });
+
+    return {
+      day,
+      availableCount: targets.filter((target) => target.isAvailable).length,
+      targets,
+    } satisfies ReuseTargetDay;
+  });
+}
+
+function getInitialReuseTargetDayIndex(targetDays: ReuseTargetDay[]) {
+  return (
+    targetDays.find((targetDay) => targetDay.availableCount > 0)?.day.dayIndex ??
+    targetDays[0]?.day.dayIndex ??
+    0
+  );
 }
 
 function WeeklyMenuHero({
@@ -894,6 +984,8 @@ function SlotOverviewPanel({
   onOpenDetails,
   onAdd,
   onReplace,
+  onReuseItem,
+  onReuseSlot,
   onRemove,
   onClose,
   feedbackMessage,
@@ -905,6 +997,8 @@ function SlotOverviewPanel({
   onOpenDetails: (slotItemId: string) => void;
   onAdd: () => void;
   onReplace: (slotItemId: string) => void;
+  onReuseItem: (slotItemId: string) => void;
+  onReuseSlot: () => void;
   onRemove: (slotItemId: string) => void;
   onClose: () => void;
   feedbackMessage: string | null;
@@ -984,7 +1078,7 @@ function SlotOverviewPanel({
                     </div>
                   </button>
 
-                  <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="mt-3 grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => onReplace(item.id)}
@@ -992,6 +1086,14 @@ function SlotOverviewPanel({
                       className="rounded-2xl border border-clay/20 bg-sand/55 px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
                     >
                       {t("weeklyMenu.details.replace")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onReuseItem(item.id)}
+                      disabled={item.isArchivedDish || isPending}
+                      className="rounded-2xl border border-clay/20 bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
+                    >
+                      {t("weeklyMenu.reuse.itemAction")}
                     </button>
                     <button
                       type="button"
@@ -1007,17 +1109,38 @@ function SlotOverviewPanel({
             })}
           </div>
         )}
+
+        {slot.hasArchivedItems ? (
+          <SurfaceCard className="mt-3 border-sand/80 bg-sand/35">
+            <p className="text-sm leading-6 text-cocoa">
+              {t("weeklyMenu.reuse.activeOnlyNotice")}
+            </p>
+          </SurfaceCard>
+        ) : null}
       </div>
 
       <div className="shrink-0 border-t border-white/70 bg-paper-glow/95 pt-3 backdrop-blur-sm">
-        <button
-          type="button"
-          onClick={onAdd}
-          disabled={isPending}
-          className="w-full rounded-[1.4rem] bg-clay px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
-        >
-          {hasItems ? t("weeklyMenu.slotFlow.addMore") : t("weeklyMenu.slotFlow.addFirst")}
-        </button>
+        <div className="space-y-2">
+          {hasItems ? (
+            <button
+              type="button"
+              onClick={onReuseSlot}
+              disabled={slot.hasArchivedItems || isPending}
+              className="w-full rounded-[1.4rem] border border-clay/20 bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
+            >
+              {t("weeklyMenu.reuse.slotAction")}
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={onAdd}
+            disabled={isPending}
+            className="w-full rounded-[1.4rem] bg-clay px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+          >
+            {hasItems ? t("weeklyMenu.slotFlow.addMore") : t("weeklyMenu.slotFlow.addFirst")}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1029,6 +1152,7 @@ function SlotItemDetailsPanel({
   slotItem,
   onBack,
   onReplace,
+  onReuse,
   onRemove,
   onClose,
   isPending,
@@ -1039,6 +1163,7 @@ function SlotItemDetailsPanel({
   slotItem: WeeklyMenuSlotItemView;
   onBack: () => void;
   onReplace: () => void;
+  onReuse: () => void;
   onRemove: () => void;
   onClose: () => void;
   isPending: boolean;
@@ -1147,7 +1272,13 @@ function SlotItemDetailsPanel({
 
       <div className="shrink-0 border-t border-white/70 bg-paper-glow/95 pt-3 backdrop-blur-sm">
         <div className="rounded-[1.4rem] bg-white/88 p-3 shadow-sm">
-          <div className="grid grid-cols-2 gap-2">
+          {slotItem.isArchivedDish ? (
+            <p className="mb-3 text-sm leading-6 text-cocoa">
+              {t("weeklyMenu.reuse.activeOnlyNotice")}
+            </p>
+          ) : null}
+
+          <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={onReplace}
@@ -1155,6 +1286,15 @@ function SlotItemDetailsPanel({
               className="rounded-2xl border border-clay/20 bg-sand/55 px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
             >
               {t("weeklyMenu.details.replace")}
+            </button>
+
+            <button
+              type="button"
+              onClick={onReuse}
+              disabled={slotItem.isArchivedDish || isPending}
+              className="rounded-2xl border border-clay/20 bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
+            >
+              {t("weeklyMenu.reuse.itemAction")}
             </button>
 
             <button
@@ -1333,6 +1473,219 @@ function SlotDishPickerPanel({
   );
 }
 
+function SlotReusePickerPanel({
+  menu,
+  day,
+  slot,
+  slotItem,
+  mode,
+  onBack,
+  onClose,
+  onSelectTarget,
+  feedbackMessage,
+  isPending,
+}: {
+  menu: WeeklyMenuView;
+  day: WeeklyMenuDayView;
+  slot: WeeklyMenuSlotView;
+  slotItem?: WeeklyMenuSlotItemView;
+  mode: ReuseMode;
+  onBack: () => void;
+  onClose: () => void;
+  onSelectTarget: (target: { dayIndex: number; mealType: MealType }) => void;
+  feedbackMessage: string | null;
+  isPending: boolean;
+}) {
+  const t = useT();
+  const canReuse =
+    mode === "slot"
+      ? slot.items.length > 0 && !slot.hasArchivedItems
+      : Boolean(slotItem && !slotItem.isArchivedDish);
+  const targetDays = buildReuseTargetDays({
+    days: menu.days,
+    sourceDayIndex: day.dayIndex,
+    sourceMealType: slot.mealType,
+    mode,
+    sourceDishId: mode === "item" ? slotItem?.dishId : undefined,
+    t,
+  });
+  const [selectedDayIndex, setSelectedDayIndex] = useState(() =>
+    getInitialReuseTargetDayIndex(targetDays),
+  );
+  const selectedTargetDay =
+    targetDays.find((targetDay) => targetDay.day.dayIndex === selectedDayIndex) ??
+    targetDays[0];
+  const noAvailableTargets = targetDays.every((targetDay) => targetDay.availableCount === 0);
+
+  useEffect(() => {
+    if (!selectedTargetDay) {
+      return;
+    }
+
+    if (selectedTargetDay.availableCount > 0 || noAvailableTargets) {
+      return;
+    }
+
+    const firstAvailableDay = targetDays.find((targetDay) => targetDay.availableCount > 0);
+
+    if (firstAvailableDay && firstAvailableDay.day.dayIndex !== selectedDayIndex) {
+      setSelectedDayIndex(firstAvailableDay.day.dayIndex);
+    }
+  }, [noAvailableTargets, selectedDayIndex, selectedTargetDay, targetDays]);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SlotSheetHeader
+        eyebrow={
+          mode === "slot"
+            ? t("weeklyMenu.reuse.slotEyebrow")
+            : t("weeklyMenu.reuse.itemEyebrow")
+        }
+        day={day}
+        slot={slot}
+        onClose={onClose}
+        closeLabel={t("common.actions.close")}
+        archivedDishLabel={t("weeklyMenu.details.archived")}
+      />
+
+      <button
+        type="button"
+        onClick={onBack}
+        disabled={isPending}
+        className="mt-4 self-start rounded-full bg-white px-4 py-2 text-xs font-semibold text-cocoa shadow-sm disabled:opacity-60"
+      >
+        {t("weeklyMenu.reuse.backToSlot")}
+      </button>
+
+      <SlotFlowNotice message={feedbackMessage} />
+
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pr-1">
+        <div className="space-y-4">
+          <SurfaceCard className="bg-white/88">
+            <p className="text-sm font-semibold text-ink">
+              {mode === "slot"
+                ? t("weeklyMenu.reuse.sourceSlot")
+                : t("weeklyMenu.reuse.sourceDish")}
+            </p>
+            <p className="mt-2 break-words text-sm font-semibold leading-6 text-ink">
+              {mode === "slot" ? slot.mealLabel : slotItem?.dishName}
+            </p>
+            {mode === "slot" ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {slot.items.map((item) => (
+                  <span
+                    key={`reuse-source-${item.id}`}
+                    className="rounded-full border border-sand/70 bg-sand/35 px-3 py-1 text-[11px] font-medium text-cocoa"
+                  >
+                    {item.dishName}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <p className="mt-3 text-sm leading-6 text-cocoa">
+              {mode === "slot"
+                ? t("weeklyMenu.reuse.slotDescription")
+                : t("weeklyMenu.reuse.itemDescription")}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-cocoa">
+              {t("weeklyMenu.reuse.independentHint")}
+            </p>
+          </SurfaceCard>
+
+          {!canReuse ? (
+            <SurfaceCard className="border-sand/80 bg-sand/35">
+              <p className="text-sm leading-6 text-cocoa">
+                {t("weeklyMenu.reuse.activeOnlyNotice")}
+              </p>
+            </SurfaceCard>
+          ) : null}
+
+          <div>
+            <p className="text-sm font-semibold text-ink">
+              {t("weeklyMenu.reuse.targetDay")}
+            </p>
+            <div className="mt-3 grid grid-cols-7 gap-2">
+              {targetDays.map((targetDay) => (
+                <DayOverviewButton
+                  key={`reuse-day-${targetDay.day.isoDate}`}
+                  day={targetDay.day}
+                  isActive={targetDay.day.dayIndex === selectedTargetDay?.day.dayIndex}
+                  onSelect={setSelectedDayIndex}
+                />
+              ))}
+            </div>
+          </div>
+
+          {selectedTargetDay ? (
+            <div>
+              <p className="text-sm font-semibold text-ink">
+                {t("weeklyMenu.reuse.targetMeal")}
+              </p>
+              <div className="mt-3 space-y-3">
+                {selectedTargetDay.targets.map((target) => (
+                  <button
+                    key={`reuse-target-${target.dayIndex}-${target.mealType}`}
+                    type="button"
+                    onClick={() =>
+                      onSelectTarget({
+                        dayIndex: target.dayIndex,
+                        mealType: target.mealType,
+                      })
+                    }
+                    disabled={!canReuse || !target.isAvailable || isPending}
+                    className={[
+                      "w-full rounded-[1.4rem] border px-4 py-3 text-left shadow-sm transition",
+                      target.isAvailable
+                        ? "border-white/80 bg-white/92 hover:bg-white"
+                        : "border-sand/80 bg-sand/45 text-cocoa/90",
+                      isPending ? "opacity-70" : "",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-ink">{target.mealLabel}</p>
+                        <p className="mt-1 break-words text-sm leading-6 text-cocoa">
+                          {target.isAvailable ? target.summaryLabel : target.statusLabel}
+                        </p>
+                      </div>
+
+                      <span
+                        className={[
+                          "shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold",
+                          target.isAvailable
+                            ? "bg-blush text-ink"
+                            : "bg-white/85 text-cocoa shadow-sm",
+                        ].join(" ")}
+                      >
+                        {target.isAvailable
+                          ? t("weeklyMenu.reuse.pickTarget")
+                          : target.statusLabel}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {canReuse && noAvailableTargets ? (
+            <SurfaceCard className="bg-white/85">
+              <p className="text-sm font-semibold text-ink">
+                {t("weeklyMenu.reuse.noTargetsTitle")}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-cocoa">
+                {mode === "slot"
+                  ? t("weeklyMenu.reuse.noSlotTargetsDescription")
+                  : t("weeklyMenu.reuse.noItemTargetsDescription")}
+              </p>
+            </SurfaceCard>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WeeklyMenuScreen({
   menu,
   dishes,
@@ -1341,6 +1694,8 @@ export function WeeklyMenuScreen({
   addDishAction,
   replaceItemAction,
   removeItemAction,
+  reuseItemAction,
+  reuseSlotAction,
   errorMessage,
   shoppingSummary,
 }: {
@@ -1351,6 +1706,8 @@ export function WeeklyMenuScreen({
   addDishAction: (formData: FormData) => Promise<WeeklyMenuSlotMutationResult>;
   replaceItemAction: (formData: FormData) => Promise<WeeklyMenuSlotMutationResult>;
   removeItemAction: (formData: FormData) => Promise<WeeklyMenuSlotMutationResult>;
+  reuseItemAction: (formData: FormData) => Promise<WeeklyMenuSlotMutationResult>;
+  reuseSlotAction: (formData: FormData) => Promise<WeeklyMenuSlotMutationResult>;
   errorMessage?: string;
   shoppingSummary: CurrentWeekShoppingListSummary | null;
 }) {
@@ -1361,9 +1718,10 @@ export function WeeklyMenuScreen({
   const [sheetState, setSheetState] = useState<{
     dayIndex: number;
     mealType: MealType;
-    view: "overview" | "details" | "picker";
+    view: "overview" | "details" | "picker" | "reuse";
     slotItemId?: string;
     pickerMode?: "add" | "replace";
+    reuseMode?: ReuseMode;
   } | null>(null);
   const [slotFeedback, setSlotFeedback] = useState<string | null>(null);
   const [activeDayIndex, setActiveDayIndex] = useState(() =>
@@ -1418,6 +1776,21 @@ export function WeeklyMenuScreen({
         view: selectedSlot.items.length > 0 ? "overview" : "picker",
         pickerMode: selectedSlot.items.length > 0 ? undefined : "add",
       });
+      return;
+    }
+
+    if (
+      sheetState.view === "reuse" &&
+      sheetState.reuseMode === "item" &&
+      sheetState.slotItemId &&
+      !selectedSlotItem
+    ) {
+      setSheetState({
+        dayIndex: sheetState.dayIndex,
+        mealType: sheetState.mealType,
+        view: selectedSlot.items.length > 0 ? "overview" : "picker",
+        pickerMode: selectedSlot.items.length > 0 ? undefined : "add",
+      });
     }
   }, [selectedDay, selectedSlot, selectedSlotItem, sheetState]);
 
@@ -1434,6 +1807,14 @@ export function WeeklyMenuScreen({
   function getMutationErrorMessage(code: WeeklyMenuSlotMutationErrorCode) {
     if (code === "duplicate_dish_in_slot") {
       return t("weeklyMenu.slotFlow.duplicateNotice");
+    }
+
+    if (code === "slot_not_empty") {
+      return t("weeklyMenu.reuse.targetRequiresEmpty");
+    }
+
+    if (code === "dish_not_available") {
+      return t("weeklyMenu.reuse.activeOnlyNotice");
     }
 
     return t("weeklyMenu.slotFlow.actionFailed");
@@ -1603,6 +1984,23 @@ export function WeeklyMenuScreen({
                   slotItemId,
                 })
               }
+              onReuseItem={(slotItemId) =>
+                setSheetState({
+                  dayIndex: selectedDay.dayIndex,
+                  mealType: selectedSlot.mealType,
+                  view: "reuse",
+                  reuseMode: "item",
+                  slotItemId,
+                })
+              }
+              onReuseSlot={() =>
+                setSheetState({
+                  dayIndex: selectedDay.dayIndex,
+                  mealType: selectedSlot.mealType,
+                  view: "reuse",
+                  reuseMode: "slot",
+                })
+              }
               onRemove={(slotItemId) => {
                 const shouldRemove = window.confirm(
                   t("weeklyMenu.slotFlow.removeConfirm", {
@@ -1659,6 +2057,15 @@ export function WeeklyMenuScreen({
                   slotItemId: selectedSlotItem.id,
                 })
               }
+              onReuse={() =>
+                setSheetState({
+                  dayIndex: selectedDay.dayIndex,
+                  mealType: selectedSlot.mealType,
+                  view: "reuse",
+                  reuseMode: "item",
+                  slotItemId: selectedSlotItem.id,
+                })
+              }
               onRemove={() => {
                 const shouldRemove = window.confirm(
                   t("weeklyMenu.slotFlow.removeConfirm", {
@@ -1696,6 +2103,54 @@ export function WeeklyMenuScreen({
               }}
               isPending={isPending}
               locale={locale}
+            />
+          ) : null}
+
+          {sheetState.view === "reuse" && sheetState.reuseMode ? (
+            <SlotReusePickerPanel
+              menu={menu}
+              day={selectedDay}
+              slot={selectedSlot}
+              slotItem={sheetState.reuseMode === "item" ? selectedSlotItem : undefined}
+              mode={sheetState.reuseMode}
+              onBack={() => resetToOverview(selectedDay, selectedSlot)}
+              onClose={() => {
+                setSlotFeedback(null);
+                setSheetState(null);
+              }}
+              onSelectTarget={({ dayIndex, mealType }) => {
+                if (sheetState.reuseMode === "item" && sheetState.slotItemId) {
+                  runSlotMutation(
+                    reuseItemAction,
+                    {
+                      sourceDayIndex: selectedDay.dayIndex,
+                      sourceMealType: selectedSlot.mealType,
+                      slotItemId: sheetState.slotItemId,
+                      dayIndex,
+                      mealType,
+                    },
+                    () => {
+                      resetToOverview(selectedDay, selectedSlot);
+                    },
+                  );
+                  return;
+                }
+
+                runSlotMutation(
+                  reuseSlotAction,
+                  {
+                    sourceDayIndex: selectedDay.dayIndex,
+                    sourceMealType: selectedSlot.mealType,
+                    dayIndex,
+                    mealType,
+                  },
+                  () => {
+                    resetToOverview(selectedDay, selectedSlot);
+                  },
+                );
+              }}
+              feedbackMessage={slotFeedback}
+              isPending={isPending}
             />
           ) : null}
 

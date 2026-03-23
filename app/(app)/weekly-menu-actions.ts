@@ -11,7 +11,13 @@ export type WeeklyMenuSlotMutationResult =
     }
   | {
       status: "error";
-      code: "duplicate_dish_in_slot" | "slot_item_not_found" | "slot_not_found" | "failed";
+      code:
+        | "duplicate_dish_in_slot"
+        | "slot_item_not_found"
+        | "slot_not_found"
+        | "slot_not_empty"
+        | "dish_not_available"
+        | "failed";
     };
 
 function readText(formData: FormData, key: string) {
@@ -20,7 +26,11 @@ function readText(formData: FormData, key: string) {
 }
 
 function readDayIndex(formData: FormData) {
-  const rawValue = readText(formData, "dayIndex");
+  return readNamedDayIndex(formData, "dayIndex");
+}
+
+function readNamedDayIndex(formData: FormData, key: string) {
+  const rawValue = readText(formData, key);
   const parsedValue = Number(rawValue);
 
   if (!Number.isInteger(parsedValue)) {
@@ -39,10 +49,7 @@ function mapWeeklyMenuActionError(error: unknown): WeeklyMenuSlotMutationResult 
   if (isWeeklyMenuMutationError(error)) {
     return {
       status: "error",
-      code:
-        error.code === "dish_not_available"
-          ? "failed"
-          : error.code,
+      code: error.code,
     };
   }
 
@@ -139,6 +146,53 @@ export async function removeWeeklySlotItemAction(
     return {
       status: "success",
       slotIsEmpty: result.slotIsEmpty,
+    };
+  } catch (error) {
+    return mapWeeklyMenuActionError(error);
+  }
+}
+
+export async function reuseWeeklySlotItemAction(
+  formData: FormData,
+): Promise<WeeklyMenuSlotMutationResult> {
+  try {
+    const { copyCurrentWeekSlotItem } = await import("@/lib/weekly-menu-crud");
+
+    await copyCurrentWeekSlotItem({
+      sourceDayIndex: readNamedDayIndex(formData, "sourceDayIndex"),
+      sourceMealType: readText(formData, "sourceMealType"),
+      slotItemId: readText(formData, "slotItemId"),
+      targetDayIndex: readDayIndex(formData),
+      targetMealType: readText(formData, "mealType"),
+    });
+
+    revalidateWeeklyMenuPaths();
+
+    return {
+      status: "success",
+    };
+  } catch (error) {
+    return mapWeeklyMenuActionError(error);
+  }
+}
+
+export async function reuseWeeklySlotAction(
+  formData: FormData,
+): Promise<WeeklyMenuSlotMutationResult> {
+  try {
+    const { copyCurrentWeekSlot } = await import("@/lib/weekly-menu-crud");
+
+    await copyCurrentWeekSlot({
+      sourceDayIndex: readNamedDayIndex(formData, "sourceDayIndex"),
+      sourceMealType: readText(formData, "sourceMealType"),
+      targetDayIndex: readDayIndex(formData),
+      targetMealType: readText(formData, "mealType"),
+    });
+
+    revalidateWeeklyMenuPaths();
+
+    return {
+      status: "success",
     };
   } catch (error) {
     return mapWeeklyMenuActionError(error);

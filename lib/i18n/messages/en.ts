@@ -113,6 +113,33 @@ export const enMessages: TranslationMessages = {
       duplicateNotice: "This dish is already in the slot.",
       actionFailed: "Could not update this slot right now. Try again.",
     },
+    reuse: {
+      itemAction: "Copy",
+      slotAction: "Copy full slot",
+      itemEyebrow: "Copy Dish",
+      slotEyebrow: "Copy Slot",
+      backToSlot: "Back to slot",
+      sourceDish: "Dish to copy",
+      sourceSlot: "Slot to copy",
+      itemDescription: "Pick another day and meal slot in this week for this dish.",
+      slotDescription:
+        "Copy every dish in this slot to another empty meal slot in this week.",
+      independentHint: "The copy is independent and will not stay linked to the source.",
+      targetDay: "Choose day",
+      targetMeal: "Choose meal slot",
+      currentSlot: "Current slot",
+      targetAlreadyContainsDish: "Dish already there",
+      targetRequiresEmpty: "Only empty slots are available",
+      emptyTarget: "Empty slot",
+      filledTarget: "{count} dishes",
+      pickTarget: "Copy here",
+      noTargetsTitle: "No available targets",
+      noItemTargetsDescription:
+        "This dish cannot be copied into another slot this week.",
+      noSlotTargetsDescription:
+        "Only empty slots are available for full-slot copy this week.",
+      activeOnlyNotice: "Reuse is available only for active dishes.",
+    },
     picker: {
       eyebrow: "Dish Picker",
       replaceEyebrow: "Replace Dish",

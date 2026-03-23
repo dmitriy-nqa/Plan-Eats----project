@@ -123,6 +123,30 @@ export type TranslationMessages = {
       duplicateNotice: string;
       actionFailed: string;
     };
+    reuse: {
+      itemAction: string;
+      slotAction: string;
+      itemEyebrow: string;
+      slotEyebrow: string;
+      backToSlot: string;
+      sourceDish: string;
+      sourceSlot: string;
+      itemDescription: string;
+      slotDescription: string;
+      independentHint: string;
+      targetDay: string;
+      targetMeal: string;
+      currentSlot: string;
+      targetAlreadyContainsDish: string;
+      targetRequiresEmpty: string;
+      emptyTarget: string;
+      filledTarget: string;
+      pickTarget: string;
+      noTargetsTitle: string;
+      noItemTargetsDescription: string;
+      noSlotTargetsDescription: string;
+      activeOnlyNotice: string;
+    };
     picker: {
       eyebrow: string;
       replaceEyebrow: string;
@@ -508,6 +532,28 @@ export type TranslationKey =
   | "weeklyMenu.slotFlow.alreadyInSlot"
   | "weeklyMenu.slotFlow.duplicateNotice"
   | "weeklyMenu.slotFlow.actionFailed"
+  | "weeklyMenu.reuse.itemAction"
+  | "weeklyMenu.reuse.slotAction"
+  | "weeklyMenu.reuse.itemEyebrow"
+  | "weeklyMenu.reuse.slotEyebrow"
+  | "weeklyMenu.reuse.backToSlot"
+  | "weeklyMenu.reuse.sourceDish"
+  | "weeklyMenu.reuse.sourceSlot"
+  | "weeklyMenu.reuse.itemDescription"
+  | "weeklyMenu.reuse.slotDescription"
+  | "weeklyMenu.reuse.independentHint"
+  | "weeklyMenu.reuse.targetDay"
+  | "weeklyMenu.reuse.targetMeal"
+  | "weeklyMenu.reuse.currentSlot"
+  | "weeklyMenu.reuse.targetAlreadyContainsDish"
+  | "weeklyMenu.reuse.targetRequiresEmpty"
+  | "weeklyMenu.reuse.emptyTarget"
+  | "weeklyMenu.reuse.filledTarget"
+  | "weeklyMenu.reuse.pickTarget"
+  | "weeklyMenu.reuse.noTargetsTitle"
+  | "weeklyMenu.reuse.noItemTargetsDescription"
+  | "weeklyMenu.reuse.noSlotTargetsDescription"
+  | "weeklyMenu.reuse.activeOnlyNotice"
   | "weeklyMenu.picker.eyebrow"
   | "weeklyMenu.picker.replaceEyebrow"
   | "weeklyMenu.picker.backToDetails"

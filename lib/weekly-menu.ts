@@ -20,6 +20,7 @@ export const weeklyMenuMutationErrorCodes = [
   "duplicate_dish_in_slot",
   "slot_item_not_found",
   "slot_not_found",
+  "slot_not_empty",
   "dish_not_available",
 ] as const;
 

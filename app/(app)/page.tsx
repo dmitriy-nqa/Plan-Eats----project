@@ -5,6 +5,8 @@ import {
   assignWeeklySlotAction,
   clearWeeklySlotAction,
   removeWeeklySlotItemAction,
+  reuseWeeklySlotAction,
+  reuseWeeklySlotItemAction,
   replaceWeeklySlotItemAction,
 } from "./weekly-menu-actions";
 
@@ -45,6 +47,8 @@ async function WeeklyMenuPageContent() {
         addDishAction={addWeeklySlotDishAction}
         replaceItemAction={replaceWeeklySlotItemAction}
         removeItemAction={removeWeeklySlotItemAction}
+        reuseItemAction={reuseWeeklySlotItemAction}
+        reuseSlotAction={reuseWeeklySlotAction}
         errorMessage={getTranslation(locale, "weeklyMenu.errors.configurationHelp")}
         shoppingSummary={null}
       />
@@ -67,6 +71,8 @@ async function WeeklyMenuPageContent() {
         addDishAction={addWeeklySlotDishAction}
         replaceItemAction={replaceWeeklySlotItemAction}
         removeItemAction={removeWeeklySlotItemAction}
+        reuseItemAction={reuseWeeklySlotItemAction}
+        reuseSlotAction={reuseWeeklySlotAction}
         shoppingSummary={shoppingSummary}
       />
     );
@@ -85,6 +91,8 @@ async function WeeklyMenuPageContent() {
         addDishAction={addWeeklySlotDishAction}
         replaceItemAction={replaceWeeklySlotItemAction}
         removeItemAction={removeWeeklySlotItemAction}
+        reuseItemAction={reuseWeeklySlotItemAction}
+        reuseSlotAction={reuseWeeklySlotAction}
         errorMessage={message}
         shoppingSummary={null}
       />
