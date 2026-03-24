@@ -97,6 +97,33 @@ const sheetFooterClassName =
 
 const sheetFooterCardClassName = "rounded-[1.4rem] bg-white/84 p-3 shadow-sm";
 
+const archivedStatePillClassName =
+  "rounded-full border border-sand/80 bg-white/82 px-3 py-1 text-[11px] font-medium text-cocoa/84";
+
+const slotItemActionDividerClassName = "mt-3 border-t border-sand/60 pt-3";
+
+const slotItemActionRowClassName = "mt-2 flex min-w-0 flex-nowrap items-center gap-1.5";
+
+const slotItemPrimaryActionClassName =
+  "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-clay/18 bg-sand/58 px-3 py-2 text-sm font-semibold text-ink transition hover:bg-sand/72 disabled:opacity-60";
+
+const slotItemSecondaryActionClassName =
+  "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-clay/18 bg-white/84 px-3 py-2 text-sm font-semibold text-cocoa transition hover:bg-white disabled:opacity-60";
+
+const slotItemTrailingActionClassName =
+  "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full px-2.5 py-2 text-sm font-semibold text-clay transition hover:bg-white/72 disabled:opacity-60";
+
+const slotItemContextActionClassName =
+  "inline-flex items-center justify-center rounded-full px-3.5 py-2 text-sm font-semibold text-clay transition hover:bg-white/72 disabled:opacity-60";
+
+const slotFooterSecondaryActionClassName =
+  "inline-flex items-center justify-center self-center rounded-full border border-clay/18 bg-white/84 px-4 py-2.5 text-sm font-semibold text-cocoa transition hover:bg-white disabled:opacity-60";
+
+const slotDetailsPrimaryActionClassName =
+  "w-full rounded-[1.2rem] border border-clay/20 bg-sand/55 px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60";
+
+const slotDetailsSecondaryActionsClassName = "mt-2 grid grid-cols-2 gap-2";
+
 function getDishNotePresentation(note?: string) {
   const normalizedNote = note?.trim();
 
@@ -338,7 +365,7 @@ function SlotButton({
 
       <div className="ml-4 flex shrink-0 items-center gap-2.5">
         {slot.hasArchivedItems ? (
-          <span className="rounded-full bg-sand px-2.5 py-1 text-[11px] font-semibold text-cocoa">
+          <span className={archivedStatePillClassName}>
             {archivedLabel}
           </span>
         ) : null}
@@ -546,14 +573,16 @@ function SlotSheetHeader({
   slot,
   onClose,
   closeLabel,
-  archivedDishLabel,
+  archivedLabel,
+  showArchivedBadge = true,
 }: {
   eyebrow: string;
   day: WeeklyMenuDayView;
   slot: WeeklyMenuSlotView;
   onClose: () => void;
   closeLabel: string;
-  archivedDishLabel: string;
+  archivedLabel: string;
+  showArchivedBadge?: boolean;
 }) {
   return (
     <div className="flex items-start justify-between gap-3.5">
@@ -571,9 +600,9 @@ function SlotSheetHeader({
           <span className="rounded-full bg-blush px-3 py-1 text-xs font-semibold text-ink">
             {slot.mealLabel}
           </span>
-          {slot.hasArchivedItems ? (
-            <span className="rounded-full bg-sand px-3 py-1 text-xs font-semibold text-cocoa">
-              {archivedDishLabel}
+          {showArchivedBadge && slot.hasArchivedItems ? (
+            <span className={archivedStatePillClassName}>
+              {archivedLabel}
             </span>
           ) : null}
         </div>
@@ -904,7 +933,7 @@ function DishPicker({
         slot={slot}
         onClose={onClose}
         closeLabel={t("common.actions.close")}
-        archivedDishLabel={t("weeklyMenu.details.archived")}
+        archivedLabel={t("weeklyMenu.slot.archived")}
       />
 
       {onBack ? (
@@ -1043,7 +1072,7 @@ function SlotOverviewPanel({
         slot={slot}
         onClose={onClose}
         closeLabel={t("common.actions.close")}
-        archivedDishLabel={t("weeklyMenu.details.archived")}
+        archivedLabel={t("weeklyMenu.slot.archived")}
       />
 
       <SlotFlowNotice message={feedbackMessage} />
@@ -1081,10 +1110,17 @@ function SlotOverviewPanel({
                         <p className="break-words text-sm font-semibold leading-5 text-ink">
                           {item.dishName}
                         </p>
-                        {categoryLabel ? (
-                          <p className="text-xs font-medium text-cocoa/82">
-                            {categoryLabel}
-                          </p>
+                        {(categoryLabel || item.isArchivedDish) ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {categoryLabel ? (
+                              <p className="text-xs font-medium text-cocoa/82">
+                                {categoryLabel}
+                              </p>
+                            ) : null}
+                            {item.isArchivedDish ? (
+                              <MetadataBadge>{t("weeklyMenu.details.archived")}</MetadataBadge>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
 
@@ -1105,31 +1141,36 @@ function SlotOverviewPanel({
                     </div>
                   </button>
 
-                  <div className="mt-3.5 grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onReplace(item.id)}
-                      disabled={isPending}
-                      className="rounded-2xl border border-clay/20 bg-sand/55 px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
-                    >
-                      {t("weeklyMenu.details.replace")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onReuseItem(item.id)}
-                      disabled={item.isArchivedDish || isPending}
-                      className="rounded-2xl border border-clay/20 bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
-                    >
-                      {t("weeklyMenu.reuse.itemAction")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onRemove(item.id)}
-                      disabled={isPending}
-                      className="rounded-2xl border border-clay/25 bg-white px-4 py-3 text-sm font-semibold text-clay disabled:opacity-60"
-                    >
-                      {t("weeklyMenu.slotFlow.remove")}
-                    </button>
+                  <div className={slotItemActionDividerClassName}>
+                    <div className={slotItemActionRowClassName}>
+                      <button
+                        type="button"
+                        onClick={() => onReplace(item.id)}
+                        disabled={isPending}
+                        className={slotItemPrimaryActionClassName}
+                      >
+                        {t("weeklyMenu.details.replace")}
+                      </button>
+
+                      {!item.isArchivedDish ? (
+                        <button
+                          type="button"
+                          onClick={() => onReuseItem(item.id)}
+                          disabled={isPending}
+                          className={slotItemSecondaryActionClassName}
+                        >
+                          {t("weeklyMenu.reuse.itemAction")}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => onRemove(item.id)}
+                        disabled={isPending}
+                        className={slotItemTrailingActionClassName}
+                      >
+                        {t("weeklyMenu.slotFlow.remove")}
+                      </button>
+                    </div>
                   </div>
                 </SurfaceCard>
               );
@@ -1138,9 +1179,9 @@ function SlotOverviewPanel({
         )}
 
         {slot.hasArchivedItems ? (
-          <SurfaceCard className="mt-3 border-sand/75 bg-sand/28">
+          <SurfaceCard className="mt-3 border-sand/75 bg-sand/18">
             <p className="text-sm leading-6 text-cocoa">
-              {t("weeklyMenu.reuse.activeOnlyNotice")}
+              {t("weeklyMenu.reuse.archivedSlotNotice")}
             </p>
           </SurfaceCard>
         ) : null}
@@ -1148,17 +1189,6 @@ function SlotOverviewPanel({
 
       <div className={sheetFooterClassName}>
         <div className={`${sheetFooterCardClassName} space-y-2.5`}>
-          {hasItems ? (
-            <button
-              type="button"
-              onClick={onReuseSlot}
-              disabled={slot.hasArchivedItems || isPending}
-              className="w-full rounded-[1.4rem] border border-clay/20 bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
-            >
-              {t("weeklyMenu.reuse.slotAction")}
-            </button>
-          ) : null}
-
           <button
             type="button"
             onClick={onAdd}
@@ -1167,6 +1197,17 @@ function SlotOverviewPanel({
           >
             {hasItems ? t("weeklyMenu.slotFlow.addMore") : t("weeklyMenu.slotFlow.addFirst")}
           </button>
+
+          {hasItems && !slot.hasArchivedItems ? (
+            <button
+              type="button"
+              onClick={onReuseSlot}
+              disabled={isPending}
+              className={slotFooterSecondaryActionClassName}
+            >
+              {t("weeklyMenu.reuse.slotAction")}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -1216,7 +1257,8 @@ function SlotItemDetailsPanel({
         slot={slot}
         onClose={onClose}
         closeLabel={t("common.actions.close")}
-        archivedDishLabel={t("weeklyMenu.details.archived")}
+        archivedLabel={t("weeklyMenu.slot.archived")}
+        showArchivedBadge={false}
       />
 
       <button
@@ -1300,35 +1342,47 @@ function SlotItemDetailsPanel({
       <div className={sheetFooterClassName}>
         <div className={sheetFooterCardClassName}>
           {slotItem.isArchivedDish ? (
-            <p className="mb-3 rounded-[1.1rem] bg-sand/30 px-3 py-2.5 text-sm leading-6 text-cocoa">
-              {t("weeklyMenu.reuse.activeOnlyNotice")}
+            <p className="mb-3 rounded-[1.1rem] bg-sand/18 px-3 py-2.5 text-sm leading-6 text-cocoa">
+              {t("weeklyMenu.reuse.archivedDishNotice")}
             </p>
           ) : null}
 
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={onReplace}
-              disabled={isPending}
-              className="rounded-2xl border border-clay/20 bg-sand/55 px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
-            >
-              {t("weeklyMenu.details.replace")}
-            </button>
+          <button
+            type="button"
+            onClick={onReplace}
+            disabled={isPending}
+            className={slotDetailsPrimaryActionClassName}
+          >
+            {t("weeklyMenu.details.replace")}
+          </button>
 
-            <button
-              type="button"
-              onClick={onReuse}
-              disabled={slotItem.isArchivedDish || isPending}
-              className="rounded-2xl border border-clay/20 bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-60"
-            >
-              {t("weeklyMenu.reuse.itemAction")}
-            </button>
+          <div
+            className={
+              slotItem.isArchivedDish
+                ? "mt-2 flex flex-wrap items-center gap-2"
+                : slotDetailsSecondaryActionsClassName
+            }
+          >
+            {!slotItem.isArchivedDish ? (
+              <button
+                type="button"
+                onClick={onReuse}
+                disabled={isPending}
+                className="rounded-[1.1rem] border border-clay/18 bg-white/84 px-4 py-3 text-sm font-semibold text-cocoa disabled:opacity-60"
+              >
+                {t("weeklyMenu.reuse.itemAction")}
+              </button>
+            ) : null}
 
             <button
               type="button"
               onClick={onRemove}
               disabled={isPending}
-              className="rounded-2xl border border-clay/25 bg-white px-4 py-3 text-sm font-semibold text-clay disabled:opacity-60"
+              className={
+                slotItem.isArchivedDish
+                  ? slotItemContextActionClassName
+                  : "rounded-[1.1rem] border border-clay/18 bg-white/72 px-4 py-3 text-sm font-semibold text-clay disabled:opacity-60"
+              }
             >
               {t("weeklyMenu.slotFlow.remove")}
             </button>
@@ -1393,7 +1447,7 @@ function SlotDishPickerPanel({
         slot={slot}
         onClose={onClose}
         closeLabel={t("common.actions.close")}
-        archivedDishLabel={t("weeklyMenu.details.archived")}
+        archivedLabel={t("weeklyMenu.slot.archived")}
       />
 
       <button
@@ -1572,7 +1626,7 @@ function SlotReusePickerPanel({
         slot={slot}
         onClose={onClose}
         closeLabel={t("common.actions.close")}
-        archivedDishLabel={t("weeklyMenu.details.archived")}
+        archivedLabel={t("weeklyMenu.slot.archived")}
       />
 
       <button
@@ -1622,7 +1676,9 @@ function SlotReusePickerPanel({
           {!canReuse ? (
             <SurfaceCard className="border-sand/75 bg-sand/28">
               <p className="text-sm leading-6 text-cocoa">
-                {t("weeklyMenu.reuse.activeOnlyNotice")}
+                {mode === "slot"
+                  ? t("weeklyMenu.reuse.archivedSlotNotice")
+                  : t("weeklyMenu.reuse.archivedDishNotice")}
               </p>
             </SurfaceCard>
           ) : null}
@@ -1841,7 +1897,7 @@ export function WeeklyMenuScreen({
     }
 
     if (code === "dish_not_available") {
-      return t("weeklyMenu.reuse.activeOnlyNotice");
+      return t("weeklyMenu.slotFlow.dishNotAvailable");
     }
 
     return t("weeklyMenu.slotFlow.actionFailed");

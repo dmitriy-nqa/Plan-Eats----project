@@ -98,7 +98,7 @@ export const ruMessages: TranslationMessages = {
     slot: {
       chooseDish: "Выберите блюдо",
       pick: "Выбрать",
-      archived: "В архиве",
+      archived: "Из архива",
     },
     slotFlow: {
       eyebrow: "Слот",
@@ -111,16 +111,17 @@ export const ruMessages: TranslationMessages = {
       backToSlot: "Назад к слоту",
       alreadyInSlot: "Уже в этом слоте",
       duplicateNotice: "Это блюдо уже есть в слоте.",
+      dishNotAvailable: "Это блюдо больше недоступно в активной библиотеке.",
       actionFailed: "Сейчас не удалось обновить слот. Попробуйте ещё раз.",
     },
     reuse: {
-      itemAction: "Копия",
-      slotAction: "Копировать слот",
-      itemEyebrow: "Копия блюда",
-      slotEyebrow: "Копия слота",
+      itemAction: "Копировать блюдо",
+      slotAction: "Копировать набор блюд",
+      itemEyebrow: "Копировать блюдо",
+      slotEyebrow: "Копировать набор блюд",
       backToSlot: "Назад к слоту",
       sourceDish: "Блюдо для копии",
-      sourceSlot: "Слот для копии",
+      sourceSlot: "Набор блюд для копирования",
       itemDescription: "Выберите другой день и слот на эту неделю для этого блюда.",
       slotDescription: "Скопируйте все блюда из этого слота в другой пустой слот текущей недели.",
       independentHint: "Копия будет независимой и не сохранит связь с исходником.",
@@ -135,8 +136,12 @@ export const ruMessages: TranslationMessages = {
       noTargetsTitle: "Нет доступных слотов",
       noItemTargetsDescription: "Это блюдо нельзя скопировать в другой слот на этой неделе.",
       noSlotTargetsDescription:
-        "Для копии всего слота на этой неделе доступны только пустые слоты.",
-      activeOnlyNotice: "Reuse в MVP доступен только для активных блюд.",
+        "Для копирования набора блюд на этой неделе доступны только пустые слоты.",
+      activeOnlyNotice: "Копировать в другой слот можно только активные блюда.",
+      archivedDishNotice:
+        "Архивные блюда остаются видимыми в меню недели, но копировать их в другой слот нельзя.",
+      archivedSlotNotice:
+        "Копировать набор блюд можно только когда все блюда в нём активны.",
     },
     picker: {
       eyebrow: "Выбор блюда",
@@ -158,7 +163,7 @@ export const ruMessages: TranslationMessages = {
     details: {
       title: "Детали блюда",
       fallbackTitle: "Детали блюда",
-      archived: "Блюдо в архиве",
+      archived: "В архиве",
       cookNote: "Кулинарная заметка",
       ingredients: "Ингредиенты",
       noIngredients: "Для этого блюда пока не добавлены ингредиенты.",

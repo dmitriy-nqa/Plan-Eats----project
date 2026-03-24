@@ -98,7 +98,7 @@ export const enMessages: TranslationMessages = {
     slot: {
       chooseDish: "Choose a dish",
       pick: "Pick",
-      archived: "Archived",
+      archived: "From archive",
     },
     slotFlow: {
       eyebrow: "Slot",
@@ -111,16 +111,17 @@ export const enMessages: TranslationMessages = {
       backToSlot: "Back to slot",
       alreadyInSlot: "Already in this slot",
       duplicateNotice: "This dish is already in the slot.",
+      dishNotAvailable: "This dish is no longer available in the active library.",
       actionFailed: "Could not update this slot right now. Try again.",
     },
     reuse: {
-      itemAction: "Copy",
-      slotAction: "Copy full slot",
-      itemEyebrow: "Copy Dish",
-      slotEyebrow: "Copy Slot",
+      itemAction: "Copy dish",
+      slotAction: "Copy all dishes",
+      itemEyebrow: "Copy dish",
+      slotEyebrow: "Copy all dishes",
       backToSlot: "Back to slot",
       sourceDish: "Dish to copy",
-      sourceSlot: "Slot to copy",
+      sourceSlot: "Dishes to copy",
       itemDescription: "Pick another day and meal slot in this week for this dish.",
       slotDescription:
         "Copy every dish in this slot to another empty meal slot in this week.",
@@ -137,8 +138,12 @@ export const enMessages: TranslationMessages = {
       noItemTargetsDescription:
         "This dish cannot be copied into another slot this week.",
       noSlotTargetsDescription:
-        "Only empty slots are available for full-slot copy this week.",
-      activeOnlyNotice: "Reuse is available only for active dishes.",
+        "Only empty slots are available when copying all dishes this week.",
+      activeOnlyNotice: "Only active dishes can be copied to another slot.",
+      archivedDishNotice:
+        "Archived dishes stay visible in the weekly plan, but they cannot be copied into another slot.",
+      archivedSlotNotice:
+        "You can copy all dishes only when every dish in this slot is active.",
     },
     picker: {
       eyebrow: "Dish Picker",
@@ -160,7 +165,7 @@ export const enMessages: TranslationMessages = {
     details: {
       title: "Dish Details",
       fallbackTitle: "Dish details",
-      archived: "Archived dish",
+      archived: "Archived",
       cookNote: "Cook note",
       ingredients: "Ingredients",
       noIngredients: "No ingredients were added for this dish yet.",

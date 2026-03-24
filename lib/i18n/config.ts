@@ -121,6 +121,7 @@ export type TranslationMessages = {
       backToSlot: string;
       alreadyInSlot: string;
       duplicateNotice: string;
+      dishNotAvailable: string;
       actionFailed: string;
     };
     reuse: {
@@ -146,6 +147,8 @@ export type TranslationMessages = {
       noItemTargetsDescription: string;
       noSlotTargetsDescription: string;
       activeOnlyNotice: string;
+      archivedDishNotice: string;
+      archivedSlotNotice: string;
     };
     picker: {
       eyebrow: string;
@@ -531,6 +534,7 @@ export type TranslationKey =
   | "weeklyMenu.slotFlow.backToSlot"
   | "weeklyMenu.slotFlow.alreadyInSlot"
   | "weeklyMenu.slotFlow.duplicateNotice"
+  | "weeklyMenu.slotFlow.dishNotAvailable"
   | "weeklyMenu.slotFlow.actionFailed"
   | "weeklyMenu.reuse.itemAction"
   | "weeklyMenu.reuse.slotAction"
@@ -554,6 +558,8 @@ export type TranslationKey =
   | "weeklyMenu.reuse.noItemTargetsDescription"
   | "weeklyMenu.reuse.noSlotTargetsDescription"
   | "weeklyMenu.reuse.activeOnlyNotice"
+  | "weeklyMenu.reuse.archivedDishNotice"
+  | "weeklyMenu.reuse.archivedSlotNotice"
   | "weeklyMenu.picker.eyebrow"
   | "weeklyMenu.picker.replaceEyebrow"
   | "weeklyMenu.picker.backToDetails"
