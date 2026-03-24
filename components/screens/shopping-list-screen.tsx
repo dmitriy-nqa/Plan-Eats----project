@@ -27,7 +27,6 @@ import {
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import {
-  formatShoppingListCopy,
   getShoppingFlowState,
   getShoppingListCopy,
 } from "@/lib/shopping-list-copy";
@@ -361,16 +360,16 @@ export function ShoppingListScreen({
   });
   const toBuySummaryClass =
     flowState === "complete"
-      ? "bg-white/75"
+      ? "bg-white/78"
       : toBuyItems.length > 0
-        ? "border border-blush/25 bg-blush/35"
-        : "bg-white/85";
+        ? "border border-blush/18 bg-blush/22"
+        : "bg-white/82";
   const boughtSummaryClass =
     flowState === "complete"
-      ? "border border-leaf/20 bg-leaf/10"
+      ? "border border-leaf/16 bg-leaf/8"
       : boughtItems.length > 0
-        ? "border border-leaf/12 bg-white/90"
-        : "bg-white/85";
+        ? "border border-leaf/10 bg-white/88"
+        : "bg-white/82";
   const toBuyValueClass =
     flowState === "complete" ? "text-cocoa" : toBuyItems.length > 0 ? "text-ink" : "text-cocoa";
   const boughtValueClass =
@@ -430,21 +429,21 @@ export function ShoppingListScreen({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className={`rounded-[1.2rem] px-4 py-3 ${toBuySummaryClass}`}>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
+            <div className={`rounded-[1.1rem] px-3.5 py-3 ${toBuySummaryClass}`}>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cocoa/85">
                 {copy.sections.toBuy}
               </p>
-              <p className={`mt-2 text-lg font-semibold ${toBuyValueClass}`}>
-                {formatShoppingListCopy(copy.summary.toBuy, { count: toBuyItems.length })}
+              <p className={`mt-1.5 text-base font-semibold ${toBuyValueClass}`}>
+                {toBuyItems.length}
               </p>
             </div>
 
-            <div className={`rounded-[1.2rem] px-4 py-3 ${boughtSummaryClass}`}>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
+            <div className={`rounded-[1.1rem] px-3.5 py-3 ${boughtSummaryClass}`}>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cocoa/85">
                 {copy.sections.bought}
               </p>
-              <p className={`mt-2 text-lg font-semibold ${boughtValueClass}`}>
-                {formatShoppingListCopy(copy.summary.bought, { count: boughtItems.length })}
+              <p className={`mt-1.5 text-base font-semibold ${boughtValueClass}`}>
+                {boughtItems.length}
               </p>
             </div>
           </div>

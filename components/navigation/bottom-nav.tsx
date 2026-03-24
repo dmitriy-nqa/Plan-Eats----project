@@ -11,7 +11,7 @@ export function BottomNav() {
   const t = useT();
 
   return (
-    <nav className="sticky bottom-0 border-t border-white/80 bg-cream/95 px-2 pb-4 pt-3 backdrop-blur">
+    <nav className="shrink-0 border-t border-white/80 bg-cream/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] pt-2 backdrop-blur sm:pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:pt-3">
       <ul className="grid grid-cols-4 gap-2">
         {appNavigation.map((item) => {
           const isActive =
@@ -24,7 +24,7 @@ export function BottomNav() {
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
                 className={[
-                  "flex min-h-[68px] flex-col items-center justify-center rounded-3xl px-2 py-3 text-center transition",
+                  "flex min-h-[64px] flex-col items-center justify-center rounded-3xl px-2 py-2.5 text-center transition sm:min-h-[68px] sm:py-3",
                   isActive
                     ? "bg-white text-ink shadow-card"
                     : "text-cocoa/80 hover:bg-white/70 hover:text-ink",
@@ -32,7 +32,7 @@ export function BottomNav() {
               >
                 <span
                   className={[
-                    "mb-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold",
+                    "mb-1.5 inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold sm:mb-2",
                     isActive ? "bg-blush text-ink" : "bg-sand text-cocoa",
                   ].join(" ")}
                 >

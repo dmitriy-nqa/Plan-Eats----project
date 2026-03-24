@@ -20,9 +20,33 @@ html {
 
 body {
   min-height: 100vh;
+  min-height: 100svh;
   margin: 0;
   color: #2f241d;
   background: transparent;
+}
+
+.app-shell-root {
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+.app-shell-frame {
+  min-height: 100vh;
+  height: 100vh;
+  min-height: 100svh;
+  max-height: 100vh;
+  height: 100svh;
+  max-height: 100svh;
+}
+
+@media (min-width: 640px) {
+  .app-shell-frame {
+    height: calc(100vh - 3rem);
+    max-height: calc(100vh - 3rem);
+    height: calc(100svh - 3rem);
+    max-height: calc(100svh - 3rem);
+  }
 }
 
 a {
