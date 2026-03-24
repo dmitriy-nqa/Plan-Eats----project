@@ -83,8 +83,8 @@ export const enMessages: TranslationMessages = {
     },
     hero: {
       title: "Current family week",
-      withMealPlan: "The meal plan already exists for this week.",
-      empty: "This week is still empty. The first slot assignment will create the meal plan.",
+      withMealPlan: "The weekly menu is already set for this week.",
+      empty: "This week is still empty. The first slot assignment will begin filling your Weekly Menu.",
     },
     overview: {
       title: "Week overview",
@@ -239,7 +239,7 @@ export const enMessages: TranslationMessages = {
           "Browse the family recipe library by category, open a dish to read it in full, and keep active and archived dishes easy to understand.",
       },
       count: "{count} dishes",
-      activeDescription: "Active dishes are ready for planning and cooking.",
+      activeDescription: "Active dishes are ready to be added to Weekly Menu and used throughout the week.",
       archivedDescription:
         "Archived dishes stay available for reading, editing, and restoring when you need them again.",
       errorTitle: "Could not load Dish Library",
@@ -267,7 +267,7 @@ export const enMessages: TranslationMessages = {
       header: {
         eyebrow: "Dish Details",
         activeDescription:
-          "A calm reading view for the family dish, so cooking details stay easy to revisit before editing.",
+          "A calm reading view for the family dish, so cooking details stay easy to revisit before editing or adding it to Weekly Menu.",
         archivedDescription:
           "This dish lives in Archived for now. You can still read it, edit it, and restore it when it belongs back in the active family library.",
       },
