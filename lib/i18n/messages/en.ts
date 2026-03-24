@@ -70,6 +70,12 @@ export const enMessages: TranslationMessages = {
       label: "Second user",
       description: "Placeholder section for shared-family setup details.",
     },
+    productDictionary: {
+      title: "Product Names",
+      description:
+        "Keep the naming consistent here so dishes and the shopping list read more clearly.",
+      cta: "Open product names",
+    },
     language: {
       label: "Language",
     },
@@ -367,94 +373,94 @@ export const enMessages: TranslationMessages = {
     setup: {
       title: "Supabase is not configured",
       listDescription:
-        "The Products dictionary cannot load until local Supabase variables are configured.",
+        "The product-name list cannot load until local Supabase variables are configured.",
       newDescription:
-        "The Add Product form cannot save yet because local Supabase environment variables are missing.",
+        "The Add Name form cannot save yet because local Supabase environment variables are missing.",
       editDescription:
-        "The Edit Product form cannot load or save data until local Supabase variables are configured.",
+        "The Edit Name form cannot load or save data until local Supabase variables are configured.",
       hint:
         "Fill in .env.local from .env.example and restart npm.cmd run dev.",
     },
     navigation: {
-      backToLibrary: "Back to Product Dictionary",
+      backToLibrary: "Back to Product Names",
     },
     mode: {
       active: "Active",
       archived: "Archived",
     },
     actions: {
-      addProduct: "Add product",
+      addProduct: "Add name",
     },
     search: {
-      label: "Search products",
-      placeholder: "Search products",
+      label: "Search names",
+      placeholder: "Search names",
     },
     header: {
-      eyebrow: "Family Product Dictionary",
-      title: "Products",
+      eyebrow: "For consistent naming",
+      title: "Product Names",
       description:
-        "Keep canonical family products tidy, manage aliases, and link dishes to the right ingredient names without turning the app into an admin catalog.",
+        "A helper list of names so dishes and the shopping list read the same way without extra confusion.",
     },
     list: {
-      count: "{count} products",
-      aliasCount: "{count} aliases",
+      count: "{count} names",
+      aliasCount: "{count} variants",
       activeDescription:
-        "Active products are ready to be reused in dishes and future shopping generation.",
+        "Active names help keep dishes and shopping items worded the same way.",
       archivedDescription:
-        "Archived products stay safe here for history, restore, and cleanup without cluttering active suggestions.",
-      errorTitle: "Could not load Products",
+        "Archived names stay here in case you need to bring back an older entry without confusion.",
+      errorTitle: "Could not load product names",
       unknownError: "Unknown error",
       empty: {
         search: {
-          title: "No products match this search",
+          title: "No names match this search",
           description:
-            "Try a different word or clear the search field to browse the product dictionary again.",
+            "Try a different word or clear the search field to browse the name list again.",
         },
         active: {
-          title: "Your product dictionary is still empty",
+          title: "Your name list is still empty",
           description:
-            "Start with a few canonical products so dishes can link to cleaner, reusable ingredient names.",
+            "Start with a few main names so dishes and the shopping list use the same wording.",
         },
         archived: {
-          title: "Archived products will appear here",
+          title: "Archived names will appear here",
           description:
-            "When you archive a product, it leaves the active dictionary and stays here until you restore it.",
+            "When you archive a name, it leaves the active list and stays here until you restore it.",
         },
       },
     },
     form: {
       header: {
-        eyebrow: "Product Form",
-        createTitle: "Add Product",
-        editTitle: "Edit Product",
+        eyebrow: "Main name",
+        createTitle: "Add name",
+        editTitle: "Edit name",
         createDescription:
-          "Create a canonical family product and optional aliases for the ingredient names your household actually uses.",
+          "Add the main product name and, if needed, the other variants your household uses.",
         editDescription:
-          "Adjust the canonical product name, aliases, archive state, and duplicate cleanup actions.",
+          "Update the main name, other variants, or archive status so dishes and shopping stay consistent.",
       },
       badges: {
-        newProduct: "New product",
+        newProduct: "New name",
         editMode: "Edit mode",
         archived: "Archived",
       },
       fields: {
-        displayName: "Product name",
+        displayName: "Main name",
       },
       placeholders: {
         displayName: "Tomato",
         alias: "Pomidor",
       },
       aliases: {
-        title: "Also known as",
+        title: "Other variants",
         description:
-          "Add the household variants that should still resolve to the same canonical product.",
+          "Add the household naming variants that should still resolve to the same product.",
         rowsCount: "{count} rows",
-        addRow: "Add alias row",
+        addRow: "Add variant",
         removeRow: "Remove row",
       },
       actions: {
         title: "Form actions",
-        saveProduct: "Save product",
+        saveProduct: "Save name",
         saveChanges: "Save changes",
         saving: "Saving...",
       },
@@ -472,19 +478,19 @@ export const enMessages: TranslationMessages = {
       },
       validation: {
         fixErrors: "Check the highlighted fields and try saving again.",
-        displayNameRequired: "Product name is required.",
-        aliasDuplicate: "This alias is already repeated in the form.",
-        aliasMatchesDisplayName: "This alias matches the canonical product name.",
+        displayNameRequired: "Main name is required.",
+        aliasDuplicate: "This variant is already repeated in the form.",
+        aliasMatchesDisplayName: "This variant matches the main name.",
         saveFailed:
-          "We could not save this product right now. Your changes are still in the form, so you can fix and try again.",
+          "We could not save this name right now. Your changes are still in the form, so you can fix and try again.",
       },
     },
     details: {
-      manageTitle: "Product state",
+      manageTitle: "Entry status",
       activeDescription:
-        "Archive a product when you do not want it in active suggestions, or keep editing the canonical dictionary entry here.",
+        "Archive this entry if the name is no longer needed in the active list. You can restore it later if needed.",
       archivedDescription:
-        "Archived products still protect against duplicates and keep existing dish links valid until you restore them.",
+        "Archived entries stay here so older naming variants and dish links are not lost.",
     },
     merge: {
       title: "Merge duplicate into another product",

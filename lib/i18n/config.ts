@@ -81,6 +81,11 @@ export type TranslationMessages = {
       label: string;
       description: string;
     };
+    productDictionary: {
+      title: string;
+      description: string;
+      cta: string;
+    };
     language: {
       label: string;
     };
@@ -509,6 +514,9 @@ export type TranslationKey =
   | "settings.planningMode.description"
   | "settings.secondUser.label"
   | "settings.secondUser.description"
+  | "settings.productDictionary.title"
+  | "settings.productDictionary.description"
+  | "settings.productDictionary.cta"
   | "settings.language.label"
   | "weeklyMenu.header.eyebrow"
   | "weeklyMenu.header.title"

@@ -57,10 +57,7 @@ function LanguageSwitch() {
 }
 
 export function SettingsPlaceholder() {
-  const { locale } = useLocale();
   const t = useT();
-  const productDictionaryCta =
-    locale === "ru" ? "Открыть словарь продуктов" : "Open product dictionary";
 
   return (
     <div className="space-y-4">
@@ -101,16 +98,16 @@ export function SettingsPlaceholder() {
 
         <div className="rounded-2xl bg-sand/55 px-4 py-3">
           <p className="text-sm font-semibold text-ink">
-            {t("products.header.title")}
+            {t("settings.productDictionary.title")}
           </p>
           <p className="mt-1 text-sm text-cocoa">
-            {t("products.header.description")}
+            {t("settings.productDictionary.description")}
           </p>
           <Link
             href={productDictionaryRoute}
             className="mt-4 inline-flex rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-cocoa shadow-sm"
           >
-            {productDictionaryCta}
+            {t("settings.productDictionary.cta")}
           </Link>
         </div>
 
