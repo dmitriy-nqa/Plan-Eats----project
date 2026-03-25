@@ -204,21 +204,34 @@ function ShoppingListRow({
   const { locale } = useLocale();
   const copy = getShoppingListCopy(locale);
   const isManual = item.sourceType === "manual";
-  const sourceText = isManual ? copy.row.sourceManual : copy.row.sourceAuto;
   const toggleLabel = item.isChecked ? copy.row.bought : copy.row.markBought;
   const actionLabel = isManual ? copy.actions.removeItem : copy.actions.hideItem;
+  const actionClassName =
+    "inline-flex min-h-7 items-center rounded-full px-2 py-0.5 text-[12px] font-medium leading-5 transition";
+
+  function confirmRemoveFromList(event: React.FormEvent<HTMLFormElement>) {
+    if (isManual) {
+      return;
+    }
+
+    const shouldRemove = window.confirm(copy.actions.confirmHideItem);
+
+    if (!shouldRemove) {
+      event.preventDefault();
+    }
+  }
 
   return (
     <div
       className={[
-        "rounded-[1.35rem] border px-3.5 py-3.5 shadow-sm transition",
+        "rounded-[1.15rem] border px-3 py-2 shadow-sm transition",
         item.isChecked
           ? "border-white/70 bg-white/72"
           : "border-white/80 bg-white/92",
       ].join(" ")}
     >
-      <div className="flex items-start gap-3.5">
-        <div className="flex w-12 shrink-0 flex-col items-center gap-1.5 pt-0.5">
+      <div className="flex items-start gap-2.5">
+        <div className="flex w-10 shrink-0 items-start justify-center pt-0.5">
           <form action={toggleCheckedAction}>
             <input type="hidden" name="itemId" value={item.id} />
             <input type="hidden" name="nextChecked" value={String(!item.isChecked)} />
@@ -226,7 +239,7 @@ function ShoppingListRow({
               type="submit"
               aria-label={toggleLabel}
               className={[
-                "relative flex h-11 w-11 items-center justify-center rounded-full border-2 shadow-sm transition",
+                "relative flex h-10 w-10 items-center justify-center rounded-full border-2 shadow-sm transition",
                 item.isChecked
                   ? "border-leaf bg-leaf text-white"
                   : "border-clay/35 bg-white text-cocoa hover:border-clay/55 hover:bg-cream",
@@ -235,14 +248,10 @@ function ShoppingListRow({
               {item.isChecked ? <CheckedIcon /> : <span className="h-3.5 w-3.5 rounded-full border-2 border-current" />}
             </button>
           </form>
-
-          <span className="text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-cocoa/72">
-            {toggleLabel}
-          </span>
         </div>
 
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1">
+          <div className="min-w-0">
             <p
               className={[
                 "break-words text-[15px] font-semibold leading-5 text-ink",
@@ -252,37 +261,35 @@ function ShoppingListRow({
               {item.ingredientName}
             </p>
 
-            <div className="mt-1.5 flex flex-wrap items-center gap-2.5">
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
               <span
                 className={[
-                  "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                  "rounded-full px-2.5 py-0.5 text-[11px] font-semibold leading-5",
                   item.isChecked ? "bg-white/84 text-cocoa" : "bg-sand/68 text-cocoa",
                 ].join(" ")}
               >
                 {item.quantity} {item.unit}
               </span>
 
-              <p className="text-[11px] leading-5 text-cocoa/70">{sourceText}</p>
+              <div className="flex flex-wrap items-center justify-end gap-1">
+                <Link
+                  href={`/products/${item.id}/edit`}
+                  className={`${actionClassName} text-cocoa/80 hover:bg-white/76 hover:text-ink`}
+                >
+                  {copy.actions.editItem}
+                </Link>
+
+                <form action={deleteItemAction} onSubmit={confirmRemoveFromList}>
+                  <input type="hidden" name="itemId" value={item.id} />
+                  <button
+                    type="submit"
+                    className={`${actionClassName} text-[#9b5353]/90 hover:bg-white/76 hover:text-[#7d4040]`}
+                  >
+                    {actionLabel}
+                  </button>
+                </form>
+              </div>
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 pt-0.5 text-xs font-semibold">
-            <Link
-              href={`/products/${item.id}/edit`}
-              className="text-cocoa transition hover:text-ink"
-            >
-              {copy.actions.editItem}
-            </Link>
-
-            <form action={deleteItemAction}>
-              <input type="hidden" name="itemId" value={item.id} />
-              <button
-                type="submit"
-                className="text-[#9b5353] transition hover:text-[#7d4040]"
-              >
-                {actionLabel}
-              </button>
-            </form>
           </div>
         </div>
       </div>
@@ -428,21 +435,21 @@ export function ShoppingListScreen({
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className={`rounded-[1.1rem] px-3.5 py-3 ${toBuySummaryClass}`}>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cocoa/85">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className={`rounded-[1rem] px-3 py-2.5 ${toBuySummaryClass}`}>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cocoa/80">
                 {copy.sections.toBuy}
               </p>
-              <p className={`mt-1.5 text-base font-semibold ${toBuyValueClass}`}>
+              <p className={`mt-1 text-sm font-semibold ${toBuyValueClass}`}>
                 {toBuyItems.length}
               </p>
             </div>
 
-            <div className={`rounded-[1.1rem] px-3.5 py-3 ${boughtSummaryClass}`}>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cocoa/85">
+            <div className={`rounded-[1rem] px-3 py-2.5 ${boughtSummaryClass}`}>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cocoa/80">
                 {copy.sections.bought}
               </p>
-              <p className={`mt-1.5 text-base font-semibold ${boughtValueClass}`}>
+              <p className={`mt-1 text-sm font-semibold ${boughtValueClass}`}>
                 {boughtItems.length}
               </p>
             </div>

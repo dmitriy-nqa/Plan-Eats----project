@@ -23,7 +23,7 @@ import type { ShoppingListSourceType } from "@/lib/shopping-list";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
+    <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
       {children}
     </span>
   );
@@ -34,7 +34,7 @@ function FieldError({ message }: { message?: string }) {
     return null;
   }
 
-  return <p className="mt-2 text-sm leading-5 text-[#b04b4b]">{message}</p>;
+  return <p className="mt-1.5 text-sm leading-5 text-[#b04b4b]">{message}</p>;
 }
 
 function TextInput({
@@ -61,7 +61,7 @@ function TextInput({
       required={required}
       aria-invalid={hasError || undefined}
       className={[
-        "w-full rounded-2xl bg-white px-4 py-3 text-sm text-ink outline-none placeholder:text-cocoa/55",
+        "w-full rounded-2xl bg-white px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-cocoa/55",
         hasError ? "border border-[#d38c8c]" : "border border-white/80",
       ].join(" ")}
     />
@@ -121,10 +121,23 @@ export function ShoppingListItemFormScreen({
         : copy.form.sourceAutoEdit;
   const destructiveLabel =
     sourceType === "manual" ? copy.form.deleteManual : copy.form.hideAuto;
+  const shouldConfirmRemoval = sourceType !== "manual";
+
+  function confirmRemoveFromList(event: React.FormEvent<HTMLFormElement>) {
+    if (!shouldConfirmRemoval) {
+      return;
+    }
+
+    const shouldRemove = window.confirm(copy.actions.confirmHideItem);
+
+    if (!shouldRemove) {
+      event.preventDefault();
+    }
+  }
 
   return (
-    <div className="space-y-4">
-      <form action={submitAction} className="space-y-4">
+    <div className="space-y-2.5">
+      <form action={submitAction} className="space-y-3">
         {itemId ? <input type="hidden" name="itemId" value={itemId} /> : null}
         <input type="hidden" name="locale" value={locale} />
 
@@ -143,14 +156,14 @@ export function ShoppingListItemFormScreen({
           description={mode === "add" ? copy.form.addDescription : copy.form.editDescription}
         />
 
-        <SurfaceCard className={infoCardClassName}>
+        <SurfaceCard className={`${infoCardClassName} p-3.5`}>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cocoa">
             {copy.form.sourceCardLabel}
           </p>
-          <p className="mt-2 text-sm leading-6 text-cocoa">{sourceDescription}</p>
+          <p className="mt-1.5 text-sm leading-5 text-cocoa">{sourceDescription}</p>
         </SurfaceCard>
 
-        <SurfaceCard className="space-y-4 bg-gradient-to-br from-white via-cream to-almond">
+        <SurfaceCard className="space-y-3.5 bg-gradient-to-br from-white via-cream to-almond p-3.5">
           <div>
             <FieldLabel>{copy.form.nameLabel}</FieldLabel>
             <TextInput
@@ -164,7 +177,7 @@ export function ShoppingListItemFormScreen({
             <FieldError message={submissionState.fieldErrors.ingredientName} />
           </div>
 
-          <div className="grid grid-cols-[1fr_104px] gap-3">
+          <div className="grid grid-cols-[1fr_104px] gap-2.5">
             <div>
               <FieldLabel>{copy.form.quantityLabel}</FieldLabel>
               <TextInput
@@ -189,7 +202,7 @@ export function ShoppingListItemFormScreen({
                     unit: event.target.value as ShoppingListFormValues["unit"],
                   }))
                 }
-                className="w-full rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm text-ink outline-none"
+                className="w-full rounded-2xl border border-white/80 bg-white px-3.5 py-2.5 text-sm text-ink outline-none"
               >
                 {shoppingListUnits.map((unit) => (
                   <option key={unit} value={unit}>
@@ -201,9 +214,9 @@ export function ShoppingListItemFormScreen({
           </div>
         </SurfaceCard>
 
-        <SurfaceCard className="space-y-3 bg-white/80">
+        <SurfaceCard className="space-y-2 bg-white/76 p-3">
           <FieldError message={submissionState.formError} />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2">
             <SubmitButton mode={mode} />
             <Link
               href="/products"
@@ -216,14 +229,13 @@ export function ShoppingListItemFormScreen({
       </form>
 
       {mode === "edit" && itemId && deleteAction ? (
-        <SurfaceCard className="space-y-4 bg-white/85">
-          <p className="text-sm leading-6 text-cocoa">{sourceDescription}</p>
-          <form action={deleteAction}>
+        <SurfaceCard className="space-y-2 bg-white/76 p-3">
+          <form action={deleteAction} onSubmit={confirmRemoveFromList}>
             <input type="hidden" name="itemId" value={itemId} />
             <input type="hidden" name="redirectTo" value="/products" />
             <button
               type="submit"
-              className="w-full rounded-2xl border border-[#d8b4b4] bg-white px-4 py-3 text-sm font-semibold text-[#9b5353]"
+              className="w-full rounded-2xl border border-[#ddc1c1] bg-white/88 px-4 py-3 text-sm font-semibold text-[#9b5353]"
             >
               {destructiveLabel}
             </button>

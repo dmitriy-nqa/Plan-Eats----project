@@ -37,13 +37,10 @@ export default async function ProductsPage() {
   try {
     const {
       ensureCurrentWeekShoppingListFresh,
-      fetchCurrentWeekShoppingListPageData,
     } = await import("@/lib/shopping-list-crud");
 
-    await ensureCurrentWeekShoppingListFresh();
-    const pageData = await fetchCurrentWeekShoppingListPageData();
-    hasMealPlan = pageData.hasMealPlan;
-    snapshot = pageData.snapshot;
+    snapshot = await ensureCurrentWeekShoppingListFresh();
+    hasMealPlan = snapshot !== null;
   } catch (error) {
     console.error("Failed to load current-week shopping list", error);
     errorMessage = error instanceof Error ? error.message : copy.error.description;
@@ -59,3 +56,4 @@ export default async function ProductsPage() {
     />
   );
 }
+

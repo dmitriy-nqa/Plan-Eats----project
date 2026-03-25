@@ -49,6 +49,7 @@ type ShoppingListCopy = {
     editItem: string;
     removeItem: string;
     hideItem: string;
+    confirmHideItem: string;
     retry: string;
     backToWeeklyMenu: string;
     saveItem: string;
@@ -135,7 +136,8 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
       addItem: "Добавить позицию",
       editItem: "Изменить",
       removeItem: "Удалить",
-      hideItem: "Скрыть",
+      hideItem: "Убрать из списка",
+      confirmHideItem: "Убрать эту позицию из списка покупок на эту неделю?",
       retry: "Повторить",
       backToWeeklyMenu: "Перейти к меню на неделю",
       saveItem: "Сохранить позицию",
@@ -172,13 +174,13 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
         "Сейчас не удалось сохранить позицию. Данные остались в форме, так что можно исправить их и попробовать снова.",
       backToProducts: "Назад к списку",
       deleteManual: "Удалить позицию",
-      hideAuto: "Скрыть на эту неделю",
+      hideAuto: "Убрать из списка",
       sourceCardLabel: "Источник позиции",
       sourceAdd: "Добавлено вручную",
       sourceManualEdit:
         "Эта позиция была добавлена вручную и останется отдельной от автособранного списка покупок.",
       sourceAutoEdit:
-        "Эта позиция пришла из меню на неделю. Правка здесь меняет только то, как она выглядит в списке покупок на эту неделю.",
+        "Позиция пришла из меню на неделю. Здесь меняется только ее вид в списке покупок этой недели.",
     },
     flow: {
       bridge: {
@@ -245,7 +247,8 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
       addItem: "Add item",
       editItem: "Edit",
       removeItem: "Delete",
-      hideItem: "Hide",
+      hideItem: "Remove from list",
+      confirmHideItem: "Remove this item from this week's shopping list?",
       retry: "Retry",
       backToWeeklyMenu: "Go to Weekly Menu",
       saveItem: "Save item",
@@ -282,13 +285,13 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
         "We could not save this item right now. Your changes are still in the form so you can fix and try again.",
       backToProducts: "Back to Products",
       deleteManual: "Delete item",
-      hideAuto: "Hide for this week",
+      hideAuto: "Remove from list",
       sourceCardLabel: "Where this item came from",
       sourceAdd: "Added manually",
       sourceManualEdit:
         "This item was added manually and will stay separate from the generated shopping list.",
       sourceAutoEdit:
-        "This item came from the weekly menu. Editing it here changes how it appears in the shopping list for this week.",
+        "This item came from the weekly menu. Edits here only change how it appears in this week's shopping list.",
     },
     flow: {
       bridge: {

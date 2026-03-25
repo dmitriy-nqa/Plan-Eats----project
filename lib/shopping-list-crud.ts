@@ -137,6 +137,8 @@ type ShoppingListItemSnapshot = {
   sourceKey: string | null;
 };
 
+const SHOPPING_LIST_SYNC_TIMEOUT_MS = 5000;
+
 export type CurrentWeekShoppingListSnapshot = {
   shoppingListId: string;
   mealPlanId: string;
@@ -214,6 +216,32 @@ function isShoppingListStale(list: ShoppingListRow | null) {
   }
 
   return new Date(list.last_source_change_at) > new Date(list.last_synced_at);
+}
+
+class ShoppingListFreshnessTimeoutError extends Error {
+  constructor() {
+    super("Shopping list freshness sync timed out.");
+    this.name = "ShoppingListFreshnessTimeoutError";
+  }
+}
+
+async function awaitWithTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new ShoppingListFreshnessTimeoutError());
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
 }
 
 function assertMealTypeValue(value: string): MealType {
@@ -1183,7 +1211,16 @@ export async function ensureCurrentWeekShoppingListFresh() {
     : false;
 
   if (isShoppingListStale(shoppingList) || needsCompatibilityRefresh) {
-    await syncShoppingListByMealPlanId(mealPlan.id, { type: "full" });
+    try {
+      await awaitWithTimeout(
+        syncShoppingListByMealPlanId(mealPlan.id, { type: "full" }),
+        SHOPPING_LIST_SYNC_TIMEOUT_MS,
+      );
+    } catch (error) {
+      if (!(error instanceof ShoppingListFreshnessTimeoutError)) {
+        throw error;
+      }
+    }
   }
 
   return fetchCurrentWeekShoppingListSnapshot();
@@ -1494,3 +1531,4 @@ export async function upsertShoppingListItemAdjustment(input: {
   await markShoppingListSynced(input.shoppingListId);
   revalidatePath("/products");
 }
+
