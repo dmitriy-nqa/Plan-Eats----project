@@ -57,6 +57,7 @@ function ModeSwitch({ mode }: { mode: ProductLibraryMode }) {
           <Link
             key={option}
             href={getProductLibraryHref(option)}
+            prefetch={false}
             aria-current={isCurrent ? "page" : undefined}
             className={[
               "rounded-[1rem] px-4 py-2 text-sm font-semibold transition duration-200",
@@ -87,6 +88,7 @@ function ProductCard({
   return (
     <Link
       href={getProductDictionaryEditHref(product.id, mode)}
+      prefetch={false}
       className={[
         "group block rounded-[1.35rem] border px-4 py-4 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay/35 focus-visible:ring-offset-2",
         mode === "archived"
@@ -173,6 +175,7 @@ function EmptyState({
         {!isSearchEmpty ? (
           <Link
             href={getProductDictionaryCreateHref()}
+            prefetch={false}
             className="mt-5 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
           >
             {t("products.actions.addProduct")}
@@ -232,6 +235,7 @@ export function ProductsListScreen({
 
           <Link
             href={getProductDictionaryCreateHref()}
+            prefetch={false}
             className="inline-flex rounded-[1.2rem] bg-clay px-4 py-3 text-sm font-semibold text-white shadow-sm"
           >
             {t("products.actions.addProduct")}

@@ -208,6 +208,18 @@ function uniqueSlots(slots: ShoppingListSlotCoordinate[]) {
   });
 }
 
+function buildContributionSlotScopeFilter(slots: ShoppingListSlotCoordinate[]) {
+  const uniqueScopedSlots = uniqueSlots(slots);
+
+  if (uniqueScopedSlots.length === 0) {
+    return null;
+  }
+
+  return uniqueScopedSlots
+    .map((slot) => `and(day_index.eq.${slot.dayIndex},meal_type.eq.${slot.mealType})`)
+    .join(",");
+}
+
 function isShoppingListStale(list: ShoppingListRow | null) {
   if (!list) {
     return true;
@@ -703,14 +715,34 @@ function buildSlotContributionDrafts(args: {
   return [...groupedContributions.values()];
 }
 
-async function fetchContributionRowsForShoppingList(shoppingListId: string) {
+async function fetchContributionRowsForShoppingList(
+  shoppingListId: string,
+  options?: {
+    sourceKeys?: string[];
+    scope?: SyncScope;
+  },
+) {
   const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("shopping_list_item_contributions")
     .select(
       "id, shopping_list_id, meal_plan_id, contribution_key, source_key, day_index, meal_type, dish_id, product_id, ingredient_name, normalized_name, quantity, unit",
     )
     .eq("shopping_list_id", shoppingListId);
+
+  if (options?.sourceKeys && options.sourceKeys.length > 0) {
+    query = query.in("source_key", uniqueStrings(options.sourceKeys));
+  }
+
+  if (options?.scope?.type === "slots") {
+    const slotScopeFilter = buildContributionSlotScopeFilter(options.scope.slots);
+
+    if (slotScopeFilter) {
+      query = query.or(slotScopeFilter);
+    }
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -800,7 +832,9 @@ async function materializeProjectionRows(args: {
   }
 
   const [contributions, adjustments, existingAutoItems] = await Promise.all([
-    fetchContributionRowsForShoppingList(args.shoppingListId),
+    fetchContributionRowsForShoppingList(args.shoppingListId, {
+      sourceKeys,
+    }),
     fetchAdjustmentRows(args.shoppingListId, sourceKeys),
     fetchAutoItemRows(args.shoppingListId, sourceKeys),
   ]);
@@ -952,17 +986,8 @@ async function upsertContributionRows(args: {
   nextContributionDrafts: SlotContributionDraft[];
 }) {
   const supabase = getSupabaseServerClient();
-  const existingContributionRows = await fetchContributionRowsForShoppingList(args.shoppingListId);
-  const targetSlotKeys =
-    args.scope.type === "full"
-      ? null
-      : new Set(args.scope.slots.map((slot) => `${slot.dayIndex}:${slot.mealType}`));
-  const scopedExistingRows = existingContributionRows.filter((row) => {
-    if (!targetSlotKeys) {
-      return true;
-    }
-
-    return targetSlotKeys.has(`${row.day_index}:${row.meal_type}`);
+  const scopedExistingRows = await fetchContributionRowsForShoppingList(args.shoppingListId, {
+    scope: args.scope,
   });
   const nextContributionKeys = new Set(
     args.nextContributionDrafts.map((draft) => draft.contributionKey),

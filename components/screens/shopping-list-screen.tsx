@@ -275,6 +275,7 @@ function ShoppingListRow({
               <div className="flex flex-wrap items-center justify-end gap-1">
                 <Link
                   href={`/products/${item.id}/edit`}
+                  prefetch={false}
                   className={`${actionClassName} text-cocoa/80 hover:bg-white/76 hover:text-ink`}
                 >
                   {copy.actions.editItem}

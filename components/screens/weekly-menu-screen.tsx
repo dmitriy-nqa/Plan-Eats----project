@@ -485,7 +485,7 @@ function ProductsBridgeRow({
       : "bg-white/90 text-cocoa shadow-sm";
 
   return (
-    <Link href="/products" className="block">
+    <Link href="/products" prefetch={false} className="block">
       <SurfaceCard className="bg-white/72 px-4 py-3 transition hover:bg-white/88 active:translate-y-px">
         <div className="flex items-start gap-3">
           <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sand/80 text-xs font-bold text-cocoa">
@@ -968,10 +968,11 @@ function DishPicker({
             <p className="mt-2 text-sm leading-6 text-cocoa">
               {t("weeklyMenu.picker.empty.description")}
             </p>
-            <Link
-              href="/dishes/new"
-              className="mt-4 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
-            >
+              <Link
+                href="/dishes/new"
+                prefetch={false}
+                className="mt-4 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
+              >
               {t("weeklyMenu.picker.empty.cta")}
             </Link>
           </SurfaceCard>
@@ -1483,10 +1484,11 @@ function SlotDishPickerPanel({
             <p className="mt-2 text-sm leading-6 text-cocoa">
               {t("weeklyMenu.picker.empty.description")}
             </p>
-            <Link
-              href="/dishes/new"
-              className="mt-4 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
-            >
+              <Link
+                href="/dishes/new"
+                prefetch={false}
+                className="mt-4 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
+              >
               {t("weeklyMenu.picker.empty.cta")}
             </Link>
           </SurfaceCard>
@@ -2008,6 +2010,7 @@ export function WeeklyMenuScreen({
                 </p>
                 <Link
                   href="/dishes/new"
+                  prefetch={false}
                   className="mt-5 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
                 >
                   {t("weeklyMenu.empty.cta")}

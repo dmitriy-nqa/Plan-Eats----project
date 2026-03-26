@@ -143,6 +143,7 @@ function ModeSwitch({ mode }: { mode: DishLibraryMode }) {
           <Link
             key={option}
             href={getDishLibraryHref(option)}
+            prefetch={false}
             aria-current={isCurrent ? "page" : undefined}
             className={[
               "rounded-[1rem] px-4 py-2 text-sm font-semibold transition duration-200",
@@ -175,6 +176,7 @@ function DishCard({
   return (
     <Link
       href={`/dishes/${dish.id}?mode=${mode}`}
+      prefetch={false}
       className={[
         "group flex items-start gap-3.5 rounded-[1.4rem] border px-4 py-3.5 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay/35 focus-visible:ring-offset-2",
         isArchivedMode
@@ -313,6 +315,7 @@ function EmptyDishState({
         {showAddDishAction ? (
           <Link
             href="/dishes/new"
+            prefetch={false}
             className="mt-5 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
           >
             {t("dishes.actions.addDish")}
@@ -321,6 +324,7 @@ function EmptyDishState({
         {showGoToActiveAction ? (
           <Link
             href={getDishLibraryHref("active")}
+            prefetch={false}
             className="mt-5 inline-flex rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white"
           >
             {t("dishes.library.empty.archived.cta")}
@@ -434,6 +438,7 @@ export function DishListScreen({
           {showAddDishAction ? (
             <Link
               href="/dishes/new"
+              prefetch={false}
               className="inline-flex self-start rounded-[1.2rem] bg-clay px-4 py-3 text-sm font-semibold text-white shadow-sm"
             >
               {t("dishes.actions.addDish")}
