@@ -48,6 +48,7 @@ type ShoppingListSnapshotView = {
 type ShoppingListScreenProps = {
   hasMealPlan: boolean;
   snapshot: ShoppingListSnapshotView | null;
+  isSyncPending?: boolean;
   errorMessage?: string;
   toggleCheckedAction: (formData: FormData) => Promise<void>;
   deleteItemAction: (formData: FormData) => Promise<void>;
@@ -297,9 +298,18 @@ function ShoppingListRow({
   );
 }
 
-function EmptyState({ hasMealPlan }: { hasMealPlan: boolean }) {
+function EmptyState({
+  hasMealPlan,
+  isSyncPending = false,
+}: {
+  hasMealPlan: boolean;
+  isSyncPending?: boolean;
+}) {
   const { locale } = useLocale();
   const copy = getShoppingListCopy(locale);
+  const title = isSyncPending ? copy.pending.title : copy.empty.title;
+  const description = isSyncPending ? copy.pending.description : copy.empty.description;
+  const helperText = isSyncPending ? copy.pending.manualHint : copy.empty.manualHint;
 
   return (
     <SurfaceCard className={stateSurfaceClassName}>
@@ -308,13 +318,13 @@ function EmptyState({ hasMealPlan }: { hasMealPlan: boolean }) {
           PR
         </div>
         <h2 className={stateSurfaceTitleClassName}>
-          {copy.empty.title}
+          {title}
         </h2>
         <p className={stateSurfaceDescriptionClassName}>
-          {copy.empty.description}
+          {description}
         </p>
         <p className={`mt-4 ${inlineInfoClassName}`}>
-          {copy.empty.manualHint}
+          {helperText}
         </p>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <Link
@@ -343,6 +353,7 @@ function EmptyState({ hasMealPlan }: { hasMealPlan: boolean }) {
 export function ShoppingListScreen({
   hasMealPlan,
   snapshot,
+  isSyncPending = false,
   errorMessage,
   toggleCheckedAction,
   deleteItemAction,
@@ -361,6 +372,7 @@ export function ShoppingListScreen({
   const isBoughtExpanded = !collapsedSections.bought;
   const flowState = getShoppingFlowState({
     hasMealPlan,
+    isSyncPending,
     totalItems: items.length,
     toBuyCount: toBuyItems.length,
     boughtCount: boughtItems.length,
@@ -470,7 +482,9 @@ export function ShoppingListScreen({
         </SurfaceCard>
       ) : null}
 
-      {!errorMessage && !hasItems ? <EmptyState hasMealPlan={hasMealPlan} /> : null}
+      {!errorMessage && !hasItems ? (
+        <EmptyState hasMealPlan={hasMealPlan} isSyncPending={isSyncPending} />
+      ) : null}
 
       {!errorMessage && hasItems ? (
         <div className="space-y-5">

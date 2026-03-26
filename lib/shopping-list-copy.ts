@@ -2,12 +2,14 @@ import type { AppLocale } from "@/lib/i18n/config";
 
 export type ShoppingFlowState =
   | "emptyPlan"
+  | "syncing"
   | "noItems"
   | "inProgress"
   | "complete";
 
 type ShoppingFlowStateInput = {
   hasMealPlan: boolean;
+  isSyncPending?: boolean;
   totalItems: number;
   toBuyCount: number;
   boughtCount?: number;
@@ -57,6 +59,11 @@ type ShoppingListCopy = {
     saving: string;
   };
   empty: {
+    title: string;
+    description: string;
+    manualHint: string;
+  };
+  pending: {
     title: string;
     description: string;
     manualHint: string;
@@ -151,6 +158,13 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
       manualHint:
         "Можно начать и с ручной позиции, если нужно купить что-то отдельно.",
     },
+    pending: {
+      title: "Список покупок обновляется",
+      description:
+        "Меню на эту неделю уже есть. Список покупок еще догружает изменения, поэтому позиции могут появиться не сразу.",
+      manualHint:
+        "Можно немного подождать и открыть экран еще раз, либо добавить ручную позицию, если покупка нужна уже сейчас.",
+    },
     error: {
       title: "Не удалось загрузить список покупок",
       description: "Попробуйте обновить экран ещё раз.",
@@ -186,6 +200,8 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
       bridge: {
         emptyPlan:
           "Когда в меню на неделю появятся блюда, здесь соберётся список покупок.",
+        syncing:
+          "Меню на неделю уже есть. Список покупок ещё подтягивает последние изменения.",
         noItems:
           "Меню на неделю уже есть, но список покупок пока пуст.",
         inProgress:
@@ -198,6 +214,8 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
         stateDescriptions: {
           emptyPlan:
             "Список покупок появится после первого блюда в меню на неделю.",
+          syncing:
+            "Меню на неделю уже есть. Список покупок ещё обновляется и скоро покажет актуальные позиции.",
           noItems:
             "Меню на неделю уже есть, но в список покупок пока нечего добавить.",
           inProgress:
@@ -262,6 +280,13 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
       manualHint:
         "You can still start with a manual item if something needs to be bought separately.",
     },
+    pending: {
+      title: "The shopping list is updating",
+      description:
+        "This week's menu already exists. The shopping list is still pulling in recent changes, so items may appear in a moment.",
+      manualHint:
+        "You can wait a little and open this screen again, or add a manual item if something needs to be bought right away.",
+    },
     error: {
       title: "Could not load the shopping list",
       description: "Try refreshing the screen again.",
@@ -297,6 +322,8 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
       bridge: {
         emptyPlan:
           "Once this week has dishes, the shopping list will gather here.",
+        syncing:
+          "This week's menu already exists. The shopping list is still catching up with recent changes.",
         noItems:
           "This week's menu already exists, but the shopping list is still empty.",
         inProgress:
@@ -309,6 +336,8 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
         stateDescriptions: {
           emptyPlan:
             "The shopping list will appear after the first dish is added to the weekly menu.",
+          syncing:
+            "This week's menu already exists. The shopping list is still updating and will show the latest items shortly.",
           noItems:
             "This week's menu already exists, but there is nothing to add to the shopping list yet.",
           inProgress:
@@ -324,11 +353,16 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
 
 export function getShoppingFlowState({
   hasMealPlan,
+  isSyncPending = false,
   totalItems,
   toBuyCount,
 }: ShoppingFlowStateInput): ShoppingFlowState {
   if (!hasMealPlan) {
     return "emptyPlan";
+  }
+
+  if (isSyncPending && totalItems === 0) {
+    return "syncing";
   }
 
   if (totalItems === 0) {

@@ -469,6 +469,7 @@ function ProductsBridgeRow({
   const hasItems = totalItems > 0;
   const flowState = getShoppingFlowState({
     hasMealPlan,
+    isSyncPending: shoppingSummary?.isSyncPending ?? false,
     totalItems,
     toBuyCount,
     boughtCount,

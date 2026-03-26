@@ -7,7 +7,7 @@ import { ShoppingListScreen } from "@/components/screens/shopping-list-screen";
 import { SetupState } from "@/components/ui/setup-state";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { getShoppingListCopy } from "@/lib/shopping-list-copy";
-import type { CurrentWeekShoppingListSnapshot } from "@/lib/shopping-list-crud";
+import type { CurrentWeekShoppingListPageData } from "@/lib/shopping-list-crud";
 import { getSupabaseConfigurationError } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -30,17 +30,19 @@ export default async function ProductsPage() {
     );
   }
 
-  let hasMealPlan = false;
-  let snapshot: CurrentWeekShoppingListSnapshot | null = null;
+  let pageData: CurrentWeekShoppingListPageData = {
+    hasMealPlan: false,
+    snapshot: null,
+    isSyncPending: false,
+  };
   let errorMessage: string | undefined;
 
   try {
     const {
-      ensureCurrentWeekShoppingListFresh,
+      fetchCurrentWeekShoppingListPageData,
     } = await import("@/lib/shopping-list-crud");
 
-    snapshot = await ensureCurrentWeekShoppingListFresh();
-    hasMealPlan = snapshot !== null;
+    pageData = await fetchCurrentWeekShoppingListPageData();
   } catch (error) {
     console.error("Failed to load current-week shopping list", error);
     errorMessage = error instanceof Error ? error.message : copy.error.description;
@@ -48,8 +50,9 @@ export default async function ProductsPage() {
 
   return (
     <ShoppingListScreen
-      hasMealPlan={hasMealPlan}
-      snapshot={snapshot}
+      hasMealPlan={pageData.hasMealPlan}
+      snapshot={pageData.snapshot}
+      isSyncPending={pageData.isSyncPending}
       errorMessage={errorMessage}
       toggleCheckedAction={toggleShoppingListItemCheckedAction}
       deleteItemAction={deleteShoppingListItemAction}

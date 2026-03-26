@@ -153,11 +153,13 @@ export type CurrentWeekShoppingListSummary = {
   totalItems: number;
   toBuyCount: number;
   boughtCount: number;
+  isSyncPending: boolean;
 };
 
 export type CurrentWeekShoppingListPageData = {
   hasMealPlan: boolean;
   snapshot: CurrentWeekShoppingListSnapshot | null;
+  isSyncPending: boolean;
 };
 
 export type EditableShoppingListItem = {
@@ -1198,58 +1200,13 @@ export async function syncShoppingListsForDish(dishId: string) {
 }
 
 export async function ensureCurrentWeekShoppingListFresh() {
-  const { mealPlan } = await fetchCurrentWeekMealPlan();
+  const pageData = await fetchCurrentWeekShoppingListPageData();
 
-  if (!mealPlan) {
-    return null;
-  }
-
-  const shoppingList = await fetchShoppingListByMealPlanId(mealPlan.id);
-
-  const needsCompatibilityRefresh = shoppingList
-    ? await hasLegacyContributionIdentityRows(shoppingList.id)
-    : false;
-
-  if (isShoppingListStale(shoppingList) || needsCompatibilityRefresh) {
-    try {
-      await awaitWithTimeout(
-        syncShoppingListByMealPlanId(mealPlan.id, { type: "full" }),
-        SHOPPING_LIST_SYNC_TIMEOUT_MS,
-      );
-    } catch (error) {
-      if (!(error instanceof ShoppingListFreshnessTimeoutError)) {
-        throw error;
-      }
-    }
-  }
-
-  return fetchCurrentWeekShoppingListSnapshot();
+  return pageData.snapshot;
 }
 
-export async function fetchCurrentWeekShoppingListPageData(): Promise<CurrentWeekShoppingListPageData> {
-  const { mealPlan } = await fetchCurrentWeekMealPlan();
-
-  if (!mealPlan) {
-    return {
-      hasMealPlan: false,
-      snapshot: null,
-    };
-  }
-
-  return {
-    hasMealPlan: true,
-    snapshot: await fetchCurrentWeekShoppingListSnapshot(),
-  };
-}
-
-export async function fetchCurrentWeekShoppingListSnapshot() {
-  const { mealPlan } = await fetchCurrentWeekMealPlan();
-
-  if (!mealPlan) {
-    return null;
-  }
-
-  const shoppingList = await fetchShoppingListByMealPlanId(mealPlan.id);
+async function fetchShoppingListSnapshotByMealPlanId(mealPlanId: string) {
+  const shoppingList = await fetchShoppingListByMealPlanId(mealPlanId);
 
   if (!shoppingList) {
     return null;
@@ -1291,20 +1248,73 @@ export async function fetchCurrentWeekShoppingListSnapshot() {
   } satisfies CurrentWeekShoppingListSnapshot;
 }
 
-export async function fetchCurrentWeekShoppingListSummary(): Promise<CurrentWeekShoppingListSummary | null> {
-  const snapshot = await ensureCurrentWeekShoppingListFresh();
+export async function fetchCurrentWeekShoppingListPageData(): Promise<CurrentWeekShoppingListPageData> {
+  const { mealPlan } = await fetchCurrentWeekMealPlan();
 
-  if (!snapshot) {
+  if (!mealPlan) {
+    return {
+      hasMealPlan: false,
+      snapshot: null,
+      isSyncPending: false,
+    };
+  }
+
+  const shoppingList = await fetchShoppingListByMealPlanId(mealPlan.id);
+
+  const needsCompatibilityRefresh = shoppingList
+    ? await hasLegacyContributionIdentityRows(shoppingList.id)
+    : false;
+  let isSyncPending = false;
+
+  if (isShoppingListStale(shoppingList) || needsCompatibilityRefresh) {
+    try {
+      await awaitWithTimeout(
+        syncShoppingListByMealPlanId(mealPlan.id, { type: "full" }),
+        SHOPPING_LIST_SYNC_TIMEOUT_MS,
+      );
+    } catch (error) {
+      if (!(error instanceof ShoppingListFreshnessTimeoutError)) {
+        throw error;
+      }
+
+      isSyncPending = true;
+    }
+  }
+
+  return {
+    hasMealPlan: true,
+    snapshot: await fetchShoppingListSnapshotByMealPlanId(mealPlan.id),
+    isSyncPending,
+  };
+}
+
+export async function fetchCurrentWeekShoppingListSnapshot() {
+  const { mealPlan } = await fetchCurrentWeekMealPlan();
+
+  if (!mealPlan) {
     return null;
   }
 
-  const toBuyCount = snapshot.items.filter((item) => !item.isChecked).length;
-  const boughtCount = snapshot.items.length - toBuyCount;
+  return fetchShoppingListSnapshotByMealPlanId(mealPlan.id);
+}
+
+export async function fetchCurrentWeekShoppingListSummary(): Promise<CurrentWeekShoppingListSummary | null> {
+  const pageData = await fetchCurrentWeekShoppingListPageData();
+
+  if (!pageData.hasMealPlan) {
+    return null;
+  }
+
+  const snapshot = pageData.snapshot;
+  const totalItems = snapshot?.items.length ?? 0;
+  const toBuyCount = snapshot?.items.filter((item) => !item.isChecked).length ?? 0;
+  const boughtCount = totalItems - toBuyCount;
 
   return {
-    totalItems: snapshot.items.length,
+    totalItems,
     toBuyCount,
     boughtCount,
+    isSyncPending: pageData.isSyncPending,
   };
 }
 
