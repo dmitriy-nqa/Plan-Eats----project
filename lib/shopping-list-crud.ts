@@ -190,6 +190,18 @@ type SyncScope =
   | { type: "full" }
   | { type: "slots"; slots: ShoppingListSlotCoordinate[] };
 
+type ProjectedAutoItemRow = {
+  shopping_list_id: string;
+  ingredient_name: string;
+  normalized_name: string;
+  quantity: number;
+  unit: IngredientUnit;
+  source_type: ShoppingListSourceType;
+  is_checked: boolean;
+  product_id: string | null;
+  source_key: string;
+};
+
 function parseQuantity(value: number | string | null | undefined) {
   const numericValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numericValue) ? numericValue : 0;
@@ -897,6 +909,20 @@ function pickProjectionIngredientName(contributions: ShoppingListContributionRow
   return nonCanonicalNames[0] ?? "Item";
 }
 
+function areProjectedAutoRowsSemanticallyEqual(
+  existingRow: ShoppingListItemRow,
+  projectedRow: ProjectedAutoItemRow,
+) {
+  // Semantic no-op equality for derived auto rows; review if the derived payload changes.
+  return (
+    existingRow.ingredient_name === projectedRow.ingredient_name &&
+    existingRow.normalized_name === projectedRow.normalized_name &&
+    parseQuantity(existingRow.quantity) === parseQuantity(projectedRow.quantity) &&
+    existingRow.unit === projectedRow.unit &&
+    existingRow.product_id === projectedRow.product_id
+  );
+}
+
 async function materializeProjectionRows(args: {
   shoppingListId: string;
   sourceKeys: string[];
@@ -994,17 +1020,7 @@ async function materializeProjectionRows(args: {
     adjustmentsBySourceKey.set(adjustment.source_key, adjustment);
   }
 
-  const upsertRows: Array<{
-    shopping_list_id: string;
-    ingredient_name: string;
-    normalized_name: string;
-    quantity: number;
-    unit: IngredientUnit;
-    source_type: ShoppingListSourceType;
-    is_checked: boolean;
-    product_id: string | null;
-    source_key: string;
-  }> = [];
+  const upsertRows: ProjectedAutoItemRow[] = [];
   const deleteSourceKeys: string[] = [];
 
   for (const sourceKey of sourceKeys) {
@@ -1016,7 +1032,9 @@ async function materializeProjectionRows(args: {
     const existingItem = existingAutoItemsBySourceKey.get(sourceKey);
 
     if (adjustment?.adjustment_type === "suppress" || groupedContributions.length === 0) {
-      deleteSourceKeys.push(sourceKey);
+      if (existingItem) {
+        deleteSourceKeys.push(sourceKey);
+      }
       continue;
     }
 
@@ -1027,7 +1045,7 @@ async function materializeProjectionRows(args: {
     const firstContribution = groupedContributions[0];
     const overrideQuantity = parseQuantity(adjustment?.quantity);
 
-    upsertRows.push({
+    const projectedRow: ProjectedAutoItemRow = {
       shopping_list_id: args.shoppingListId,
       ingredient_name:
         adjustment?.adjustment_type === "override" && adjustment.ingredient_name
@@ -1052,7 +1070,13 @@ async function materializeProjectionRows(args: {
           ? adjustment.product_id
           : firstContribution.product_id,
       source_key: sourceKey,
-    });
+    };
+
+    if (existingItem && areProjectedAutoRowsSemanticallyEqual(existingItem, projectedRow)) {
+      continue;
+    }
+
+    upsertRows.push(projectedRow);
   }
 
   await traceReplaceDishStage(
