@@ -459,16 +459,18 @@ async function syncShoppingForSlot(args: {
       syncShoppingListByMealPlanId,
     } = await import("@/lib/shopping-list-crud");
 
-    await markShoppingListSourceChangedByMealPlanId(args.mealPlanId);
-    await syncShoppingListByMealPlanId(args.mealPlanId, {
-      type: "slots",
+    const syncScope = {
+      type: "slots" as const,
       slots: [
         {
           dayIndex: args.dayIndex,
           mealType: args.mealType,
         },
       ],
-    });
+    };
+
+    await markShoppingListSourceChangedByMealPlanId(args.mealPlanId);
+    await syncShoppingListByMealPlanId(args.mealPlanId, syncScope);
   } catch (error) {
     console.error("Failed to sync shopping list after weekly menu change", error);
   }
@@ -488,30 +490,35 @@ async function syncShoppingForMealPlan(args: {
       syncShoppingListByMealPlanId,
       waitForMealPlanSlotSourceVisibility,
     } = await import("@/lib/shopping-list-crud");
-      const prefetchedSlots =
-        args.expectedSourceSlots && args.expectedSourceSlots.length > 0
-          ? await waitForMealPlanSlotSourceVisibility({
-              mealPlanId: args.mealPlanId,
-              targets: args.expectedSourceSlots,
-            })
-          : undefined;
-      const syncScope =
-        args.expectedSourceSlots && args.expectedSourceSlots.length > 0
-          ? {
-              type: "slots" as const,
-              slots: args.expectedSourceSlots.map((slot) => ({
-                dayIndex: slot.dayIndex,
-                mealType: slot.mealType,
-              })),
-            }
-          : {
-              type: "full" as const,
-            };
 
-      await markShoppingListSourceChangedByMealPlanId(args.mealPlanId);
-      await syncShoppingListByMealPlanId(args.mealPlanId, syncScope, {
-        prefetchedSlots,
-      });
+    const expectedSlotCount = args.expectedSourceSlots?.length ?? 0;
+    const prefetchedSlots =
+      args.expectedSourceSlots && args.expectedSourceSlots.length > 0
+        ? await waitForMealPlanSlotSourceVisibility({
+            mealPlanId: args.mealPlanId,
+            targets: args.expectedSourceSlots ?? [],
+          })
+        : undefined;
+    const syncScope =
+      args.expectedSourceSlots && args.expectedSourceSlots.length > 0
+        ? {
+            type: "slots" as const,
+            slots: args.expectedSourceSlots.map((slot) => ({
+              dayIndex: slot.dayIndex,
+              mealType: slot.mealType,
+            })),
+          }
+        : {
+            type: "full" as const,
+          };
+
+    await markShoppingListSourceChangedByMealPlanId(args.mealPlanId);
+    await syncShoppingListByMealPlanId(args.mealPlanId, syncScope, {
+      prefetchedSlots:
+        expectedSlotCount > 0
+          ? prefetchedSlots
+          : undefined,
+    });
   } catch (error) {
     console.error("Failed to fully sync shopping list after weekly menu reuse", error);
   }
@@ -964,6 +971,7 @@ export async function removeCurrentWeekSlotItem(args: {
   const remainingItems = sortSlotItemRows(
     persistedItems.filter((item) => item.id !== args.slotItemId),
   );
+
   const { error: deleteItemError } = await supabase
     .from("meal_plan_slot_items")
     .delete()
@@ -1227,7 +1235,6 @@ export async function copyCurrentWeekSlot(args: {
   if (targetItems.length > 0) {
     throw new WeeklyMenuMutationError("slot_not_empty");
   }
-
   await insertSlotItems({
     familyId,
     slotId: targetSlot.id,

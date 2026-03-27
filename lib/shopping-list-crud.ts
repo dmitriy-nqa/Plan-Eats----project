@@ -666,6 +666,7 @@ function resolveIngredientIdentity(
   };
 }
 
+
 function buildSlotContributionDrafts(args: {
   mealPlanId: string;
   slot: Awaited<ReturnType<typeof fetchMealPlanSlots>>[number];
@@ -850,6 +851,7 @@ async function materializeProjectionRows(args: {
   shoppingListId: string;
   sourceKeys: string[];
   fallbackContributionDrafts?: SlotContributionDraft[];
+  replacementContributionKeys?: string[];
 }) {
   const sourceKeys = uniqueStrings(args.sourceKeys);
 
@@ -868,6 +870,7 @@ async function materializeProjectionRows(args: {
   const fallbackContributionsBySourceKey = new Map<string, ShoppingListContributionRow[]>();
   const existingAutoItemsBySourceKey = new Map<string, ShoppingListItemRow>();
   const adjustmentsBySourceKey = new Map<string, ShoppingListAdjustmentRow>();
+  const replacementContributionKeySet = new Set(args.replacementContributionKeys ?? []);
 
   for (const contribution of contributions) {
     if (!sourceKeys.includes(contribution.source_key)) {
@@ -917,14 +920,23 @@ async function materializeProjectionRows(args: {
   const deleteSourceKeys: string[] = [];
 
   for (const sourceKey of sourceKeys) {
-    // Supabase writes can be briefly non-monotonic for an immediate read-after-upsert.
-    // Prefer the fresh in-memory draft set for the current sync scope when available.
-    const groupedContributions =
-      fallbackContributionsBySourceKey.get(sourceKey) ??
-      contributionsBySourceKey.get(sourceKey) ??
-      [];
+    const persistedContributions = contributionsBySourceKey.get(sourceKey) ?? [];
+    const fallbackContributions = fallbackContributionsBySourceKey.get(sourceKey) ?? [];
+    // Supabase writes can be briefly non-monotonic for an immediate read-after-write.
+    // Rebuild the current scope from fresh in-memory drafts, but keep unaffected persisted
+    // contributions so shared source keys still materialize from the full aggregate.
+    const groupedContributions = [
+      ...persistedContributions.filter(
+        (contribution) => !replacementContributionKeySet.has(contribution.contribution_key),
+      ),
+      ...fallbackContributions,
+    ];
     const adjustment = adjustmentsBySourceKey.get(sourceKey);
     const existingItem = existingAutoItemsBySourceKey.get(sourceKey);
+    const quantity = groupedContributions.reduce(
+      (sum, contribution) => sum + parseQuantity(contribution.quantity),
+      0,
+    );
 
     if (adjustment?.adjustment_type === "suppress" || groupedContributions.length === 0) {
       if (existingItem) {
@@ -933,10 +945,6 @@ async function materializeProjectionRows(args: {
       continue;
     }
 
-    const quantity = groupedContributions.reduce(
-      (sum, contribution) => sum + parseQuantity(contribution.quantity),
-      0,
-    );
     const firstContribution = groupedContributions[0];
     const overrideQuantity = parseQuantity(adjustment?.quantity);
 
@@ -1068,6 +1076,10 @@ async function upsertContributionRows(args: {
     shoppingListId: args.shoppingListId,
     sourceKeys: affectedSourceKeys,
     fallbackContributionDrafts: args.nextContributionDrafts,
+    replacementContributionKeys: uniqueStrings([
+      ...scopedExistingRows.map((row) => row.contribution_key),
+      ...args.nextContributionDrafts.map((draft) => draft.contributionKey),
+    ]),
   });
 }
 
@@ -1127,7 +1139,9 @@ export async function syncShoppingListByMealPlanId(
 ) {
   const shoppingList = await ensureShoppingListByMealPlanId(mealPlanId);
   const [slots, productMaps] = await Promise.all([
-    options?.prefetchedSlots ? Promise.resolve(options.prefetchedSlots) : fetchMealPlanSlots(mealPlanId),
+    options?.prefetchedSlots
+      ? Promise.resolve(options.prefetchedSlots)
+      : fetchMealPlanSlots(mealPlanId),
     fetchProductResolutionMaps(),
   ]);
   const targetSlots =
@@ -1139,9 +1153,8 @@ export async function syncShoppingListByMealPlanId(
               targetSlot.dayIndex === slot.dayIndex && targetSlot.mealType === slot.mealType,
           ),
         );
-  const dishIngredientsByDishId = await fetchDishIngredientsByDishIds(
-    uniqueStrings(targetSlots.map((slot) => slot.dishId)),
-  );
+  const targetDishIds = uniqueStrings(targetSlots.map((slot) => slot.dishId));
+  const dishIngredientsByDishId = await fetchDishIngredientsByDishIds(targetDishIds);
   const nextContributionDrafts = targetSlots.flatMap((slot) =>
     buildSlotContributionDrafts({
       mealPlanId,
@@ -1150,7 +1163,6 @@ export async function syncShoppingListByMealPlanId(
       productMaps,
     }),
   );
-
   await upsertContributionRows({
     shoppingListId: shoppingList.id,
     mealPlanId,
@@ -1158,7 +1170,6 @@ export async function syncShoppingListByMealPlanId(
     nextContributionDrafts,
   });
   await markShoppingListSynced(shoppingList.id);
-
   return shoppingList.id;
 }
 
