@@ -488,24 +488,30 @@ async function syncShoppingForMealPlan(args: {
       syncShoppingListByMealPlanId,
       waitForMealPlanSlotSourceVisibility,
     } = await import("@/lib/shopping-list-crud");
-    const prefetchedSlots =
-      args.expectedSourceSlots && args.expectedSourceSlots.length > 0
-        ? await waitForMealPlanSlotSourceVisibility({
-            mealPlanId: args.mealPlanId,
-            targets: args.expectedSourceSlots,
-          })
-        : undefined;
+      const prefetchedSlots =
+        args.expectedSourceSlots && args.expectedSourceSlots.length > 0
+          ? await waitForMealPlanSlotSourceVisibility({
+              mealPlanId: args.mealPlanId,
+              targets: args.expectedSourceSlots,
+            })
+          : undefined;
+      const syncScope =
+        args.expectedSourceSlots && args.expectedSourceSlots.length > 0
+          ? {
+              type: "slots" as const,
+              slots: args.expectedSourceSlots.map((slot) => ({
+                dayIndex: slot.dayIndex,
+                mealType: slot.mealType,
+              })),
+            }
+          : {
+              type: "full" as const,
+            };
 
-    await markShoppingListSourceChangedByMealPlanId(args.mealPlanId);
-    await syncShoppingListByMealPlanId(
-      args.mealPlanId,
-      {
-        type: "full",
-      },
-      {
+      await markShoppingListSourceChangedByMealPlanId(args.mealPlanId);
+      await syncShoppingListByMealPlanId(args.mealPlanId, syncScope, {
         prefetchedSlots,
-      },
-    );
+      });
   } catch (error) {
     console.error("Failed to fully sync shopping list after weekly menu reuse", error);
   }
