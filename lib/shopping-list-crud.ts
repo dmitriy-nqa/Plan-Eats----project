@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 
 import type { IngredientUnit } from "@/lib/dish-form";
 import {
+  traceReplaceDishStage,
+  type ReplaceDishTrace,
+} from "@/lib/replace-dish-trace";
+import {
   buildShoppingListContributionKey,
   buildShoppingListSourceKey,
   getShoppingListNormalizedName,
@@ -824,6 +828,8 @@ async function materializeProjectionRows(args: {
   shoppingListId: string;
   sourceKeys: string[];
   fallbackContributionDrafts?: SlotContributionDraft[];
+  deletedContributionKeys?: string[];
+  replaceTrace?: ReplaceDishTrace;
 }) {
   const sourceKeys = uniqueStrings(args.sourceKeys);
 
@@ -831,35 +837,39 @@ async function materializeProjectionRows(args: {
     return;
   }
 
-  const [contributions, adjustments, existingAutoItems] = await Promise.all([
-    fetchContributionRowsForShoppingList(args.shoppingListId, {
-      sourceKeys,
-    }),
-    fetchAdjustmentRows(args.shoppingListId, sourceKeys),
-    fetchAutoItemRows(args.shoppingListId, sourceKeys),
-  ]);
+  const [contributions, adjustments, existingAutoItems] = await traceReplaceDishStage(
+    args.replaceTrace,
+    "replace.projectionMaterialization",
+    () =>
+      traceReplaceDishStage(
+        args.replaceTrace,
+        "projection.loadInputs",
+        () =>
+          Promise.all([
+            fetchContributionRowsForShoppingList(args.shoppingListId, {
+              sourceKeys,
+            }),
+            fetchAdjustmentRows(args.shoppingListId, sourceKeys),
+            fetchAutoItemRows(args.shoppingListId, sourceKeys),
+          ]),
+        {
+          detail: true,
+          parent: "replace.projectionMaterialization",
+        },
+      ),
+  );
   const contributionsBySourceKey = new Map<string, ShoppingListContributionRow[]>();
-  const fallbackContributionsBySourceKey = new Map<string, ShoppingListContributionRow[]>();
   const existingAutoItemsBySourceKey = new Map<string, ShoppingListItemRow>();
   const adjustmentsBySourceKey = new Map<string, ShoppingListAdjustmentRow>();
-
-  for (const contribution of contributions) {
-    if (!sourceKeys.includes(contribution.source_key)) {
-      continue;
-    }
-
-    const currentContributions = contributionsBySourceKey.get(contribution.source_key) ?? [];
-    currentContributions.push(contribution);
-    contributionsBySourceKey.set(contribution.source_key, currentContributions);
-  }
+  const deletedContributionKeys = new Set(args.deletedContributionKeys ?? []);
+  const fallbackContributionRowsByKey = new Map<string, ShoppingListContributionRow>();
 
   for (const draft of args.fallbackContributionDrafts ?? []) {
     if (!sourceKeys.includes(draft.sourceKey)) {
       continue;
     }
 
-    const currentContributions = fallbackContributionsBySourceKey.get(draft.sourceKey) ?? [];
-    currentContributions.push({
+    fallbackContributionRowsByKey.set(draft.contributionKey, {
       id: `draft:${draft.contributionKey}`,
       shopping_list_id: args.shoppingListId,
       meal_plan_id: "",
@@ -874,7 +884,31 @@ async function materializeProjectionRows(args: {
       quantity: draft.quantity,
       unit: draft.unit,
     });
-    fallbackContributionsBySourceKey.set(draft.sourceKey, currentContributions);
+  }
+
+  for (const contribution of contributions) {
+    if (!sourceKeys.includes(contribution.source_key)) {
+      continue;
+    }
+
+    if (deletedContributionKeys.has(contribution.contribution_key)) {
+      continue;
+    }
+
+    const nextContribution =
+      fallbackContributionRowsByKey.get(contribution.contribution_key) ?? contribution;
+    const currentContributions = contributionsBySourceKey.get(nextContribution.source_key) ?? [];
+    currentContributions.push({
+      ...nextContribution,
+    });
+    contributionsBySourceKey.set(nextContribution.source_key, currentContributions);
+    fallbackContributionRowsByKey.delete(contribution.contribution_key);
+  }
+
+  for (const contribution of fallbackContributionRowsByKey.values()) {
+    const currentContributions = contributionsBySourceKey.get(contribution.source_key) ?? [];
+    currentContributions.push(contribution);
+    contributionsBySourceKey.set(contribution.source_key, currentContributions);
   }
 
   for (const autoItem of existingAutoItems) {
@@ -902,11 +936,9 @@ async function materializeProjectionRows(args: {
 
   for (const sourceKey of sourceKeys) {
     // Supabase writes can be briefly non-monotonic for an immediate read-after-upsert.
-    // Prefer the fresh in-memory draft set for the current sync scope when available.
-    const groupedContributions =
-      fallbackContributionsBySourceKey.get(sourceKey) ??
-      contributionsBySourceKey.get(sourceKey) ??
-      [];
+    // Merge fresh in-memory drafts over the fetched contribution set so we keep
+    // unaffected slot contributions that share the same source key.
+    const groupedContributions = contributionsBySourceKey.get(sourceKey) ?? [];
     const adjustment = adjustmentsBySourceKey.get(sourceKey);
     const existingItem = existingAutoItemsBySourceKey.get(sourceKey);
 
@@ -950,15 +982,34 @@ async function materializeProjectionRows(args: {
     });
   }
 
+  await traceReplaceDishStage(
+    args.replaceTrace,
+    "projection.buildRows",
+    async () => undefined,
+    {
+      detail: true,
+      parent: "replace.projectionMaterialization",
+    },
+  );
+
   const supabase = getSupabaseServerClient();
 
   if (deleteSourceKeys.length > 0) {
-    const { error: deleteError } = await supabase
-      .from("shopping_list_items")
-      .delete()
-      .eq("shopping_list_id", args.shoppingListId)
-      .eq("source_type", "auto")
-      .in("source_key", deleteSourceKeys);
+    const { error: deleteError } = await traceReplaceDishStage(
+      args.replaceTrace,
+      "projection.deleteAutoItems",
+      () =>
+        supabase
+          .from("shopping_list_items")
+          .delete()
+          .eq("shopping_list_id", args.shoppingListId)
+          .eq("source_type", "auto")
+          .in("source_key", deleteSourceKeys),
+      {
+        detail: true,
+        parent: "replace.projectionMaterialization",
+      },
+    );
 
     if (deleteError) {
       throw deleteError;
@@ -966,10 +1017,16 @@ async function materializeProjectionRows(args: {
   }
 
   if (upsertRows.length > 0) {
-    const { error: upsertError } = await supabase.from("shopping_list_items").upsert(
-      upsertRows,
+    const { error: upsertError } = await traceReplaceDishStage(
+      args.replaceTrace,
+      "projection.upsertAutoItems",
+      () =>
+        supabase.from("shopping_list_items").upsert(upsertRows, {
+          onConflict: "shopping_list_id,source_key",
+        }),
       {
-        onConflict: "shopping_list_id,source_key",
+        detail: true,
+        parent: "replace.projectionMaterialization",
       },
     );
 
@@ -984,66 +1041,107 @@ async function upsertContributionRows(args: {
   mealPlanId: string;
   scope: SyncScope;
   nextContributionDrafts: SlotContributionDraft[];
+  replaceTrace?: ReplaceDishTrace;
 }) {
   const supabase = getSupabaseServerClient();
-  const scopedExistingRows = await fetchContributionRowsForShoppingList(args.shoppingListId, {
-    scope: args.scope,
-  });
-  const nextContributionKeys = new Set(
-    args.nextContributionDrafts.map((draft) => draft.contributionKey),
-  );
-  const obsoleteContributionKeys = scopedExistingRows
-    .map((row) => row.contribution_key)
-    .filter((key) => !nextContributionKeys.has(key));
-  const affectedSourceKeys = uniqueStrings([
-    ...scopedExistingRows.map((row) => row.source_key),
-    ...args.nextContributionDrafts.map((draft) => draft.sourceKey),
-  ]);
-
-  if (obsoleteContributionKeys.length > 0) {
-    const { error: deleteError } = await supabase
-      .from("shopping_list_item_contributions")
-      .delete()
-      .eq("shopping_list_id", args.shoppingListId)
-      .in("contribution_key", obsoleteContributionKeys);
-
-    if (deleteError) {
-      throw deleteError;
-    }
-  }
-
-  if (args.nextContributionDrafts.length > 0) {
-    const { error: upsertError } = await supabase
-      .from("shopping_list_item_contributions")
-      .upsert(
-        args.nextContributionDrafts.map((draft) => ({
-          shopping_list_id: args.shoppingListId,
-          meal_plan_id: args.mealPlanId,
-          contribution_key: draft.contributionKey,
-          source_key: draft.sourceKey,
-          day_index: draft.dayIndex,
-          meal_type: draft.mealType,
-          dish_id: draft.dishId,
-          product_id: draft.productId,
-          ingredient_name: draft.ingredientName,
-          normalized_name: draft.normalizedName,
-          quantity: draft.quantity,
-          unit: draft.unit,
-        })),
+  const { affectedSourceKeys, obsoleteContributionKeys } = await traceReplaceDishStage(
+    args.replaceTrace,
+    "replace.contributionUpsertDelete",
+    async () => {
+      const scopedExistingRows = await traceReplaceDishStage(
+        args.replaceTrace,
+        "contrib.loadScopedExisting",
+        () =>
+          fetchContributionRowsForShoppingList(args.shoppingListId, {
+            scope: args.scope,
+          }),
         {
-          onConflict: "shopping_list_id,contribution_key",
+          detail: true,
+          parent: "replace.contributionUpsertDelete",
         },
       );
+      const nextContributionKeys = new Set(
+        args.nextContributionDrafts.map((draft) => draft.contributionKey),
+      );
+      const obsoleteContributionKeys = scopedExistingRows
+        .map((row) => row.contribution_key)
+        .filter((key) => !nextContributionKeys.has(key));
+      const affectedSourceKeys = uniqueStrings([
+        ...scopedExistingRows.map((row) => row.source_key),
+        ...args.nextContributionDrafts.map((draft) => draft.sourceKey),
+      ]);
 
-    if (upsertError) {
-      throw upsertError;
-    }
-  }
+      if (obsoleteContributionKeys.length > 0) {
+        const { error: deleteError } = await traceReplaceDishStage(
+          args.replaceTrace,
+          "contrib.deleteObsolete",
+          () =>
+            supabase
+              .from("shopping_list_item_contributions")
+              .delete()
+              .eq("shopping_list_id", args.shoppingListId)
+              .in("contribution_key", obsoleteContributionKeys),
+          {
+            detail: true,
+            parent: "replace.contributionUpsertDelete",
+          },
+        );
+
+        if (deleteError) {
+          throw deleteError;
+        }
+      }
+
+      if (args.nextContributionDrafts.length > 0) {
+        const { error: upsertError } = await traceReplaceDishStage(
+          args.replaceTrace,
+          "contrib.upsert",
+          () =>
+            supabase
+              .from("shopping_list_item_contributions")
+              .upsert(
+                args.nextContributionDrafts.map((draft) => ({
+                  shopping_list_id: args.shoppingListId,
+                  meal_plan_id: args.mealPlanId,
+                  contribution_key: draft.contributionKey,
+                  source_key: draft.sourceKey,
+                  day_index: draft.dayIndex,
+                  meal_type: draft.mealType,
+                  dish_id: draft.dishId,
+                  product_id: draft.productId,
+                  ingredient_name: draft.ingredientName,
+                  normalized_name: draft.normalizedName,
+                  quantity: draft.quantity,
+                  unit: draft.unit,
+                })),
+                {
+                  onConflict: "shopping_list_id,contribution_key",
+                },
+              ),
+          {
+            detail: true,
+            parent: "replace.contributionUpsertDelete",
+          },
+        );
+
+        if (upsertError) {
+          throw upsertError;
+        }
+      }
+
+      return {
+        affectedSourceKeys,
+        obsoleteContributionKeys,
+      };
+    },
+  );
 
   await materializeProjectionRows({
     shoppingListId: args.shoppingListId,
     sourceKeys: affectedSourceKeys,
     fallbackContributionDrafts: args.nextContributionDrafts,
+    deletedContributionKeys: obsoleteContributionKeys,
+    replaceTrace: args.replaceTrace,
   });
 }
 
@@ -1099,13 +1197,45 @@ export async function syncShoppingListByMealPlanId(
   scope: SyncScope = { type: "full" },
   options?: {
     prefetchedSlots?: Awaited<ReturnType<typeof fetchMealPlanSlots>>;
+    replaceTrace?: ReplaceDishTrace;
   },
 ) {
-  const shoppingList = await ensureShoppingListByMealPlanId(mealPlanId);
-  const [slots, productMaps] = await Promise.all([
-    options?.prefetchedSlots ? Promise.resolve(options.prefetchedSlots) : fetchMealPlanSlots(mealPlanId),
-    fetchProductResolutionMaps(),
-  ]);
+  const shoppingList = await traceReplaceDishStage(
+    options?.replaceTrace,
+    "shopping.ensureShoppingListByMealPlanId",
+    () => ensureShoppingListByMealPlanId(mealPlanId),
+    {
+      detail: true,
+      parent: "replace.loadSyncInputs",
+    },
+  );
+  const [slots, productMaps] = await traceReplaceDishStage(
+    options?.replaceTrace,
+    "replace.loadSyncInputs",
+    () =>
+      Promise.all([
+        options?.prefetchedSlots
+          ? Promise.resolve(options.prefetchedSlots)
+          : traceReplaceDishStage(
+              options?.replaceTrace,
+              "shopping.fetchMealPlanSlots",
+              () => fetchMealPlanSlots(mealPlanId),
+              {
+                detail: true,
+                parent: "replace.loadSyncInputs",
+              },
+            ),
+        traceReplaceDishStage(
+          options?.replaceTrace,
+          "shopping.fetchProductResolutionMaps",
+          () => fetchProductResolutionMaps(),
+          {
+            detail: true,
+            parent: "replace.loadSyncInputs",
+          },
+        ),
+      ]),
+  );
   const targetSlots =
     scope.type === "full"
       ? slots
@@ -1115,16 +1245,31 @@ export async function syncShoppingListByMealPlanId(
               targetSlot.dayIndex === slot.dayIndex && targetSlot.mealType === slot.mealType,
           ),
         );
-  const dishIngredientsByDishId = await fetchDishIngredientsByDishIds(
-    uniqueStrings(targetSlots.map((slot) => slot.dishId)),
+  const dishIngredientsByDishId = await traceReplaceDishStage(
+    options?.replaceTrace,
+    "shopping.fetchDishIngredientsByDishIds",
+    () => fetchDishIngredientsByDishIds(uniqueStrings(targetSlots.map((slot) => slot.dishId))),
+    {
+      detail: true,
+      parent: "replace.loadSyncInputs",
+    },
   );
-  const nextContributionDrafts = targetSlots.flatMap((slot) =>
-    buildSlotContributionDrafts({
-      mealPlanId,
-      slot,
-      dishIngredients: dishIngredientsByDishId.get(slot.dishId) ?? [],
-      productMaps,
-    }),
+  const nextContributionDrafts = await traceReplaceDishStage(
+    options?.replaceTrace,
+    "shopping.buildSlotContributionDrafts",
+    async () =>
+      targetSlots.flatMap((slot) =>
+        buildSlotContributionDrafts({
+          mealPlanId,
+          slot,
+          dishIngredients: dishIngredientsByDishId.get(slot.dishId) ?? [],
+          productMaps,
+        }),
+      ),
+    {
+      detail: true,
+      parent: "replace.loadSyncInputs",
+    },
   );
 
   await upsertContributionRows({
@@ -1132,8 +1277,19 @@ export async function syncShoppingListByMealPlanId(
     mealPlanId,
     scope,
     nextContributionDrafts,
+    replaceTrace: options?.replaceTrace,
   });
-  await markShoppingListSynced(shoppingList.id);
+  await traceReplaceDishStage(options?.replaceTrace, "replace.shoppingFinalize", () =>
+    traceReplaceDishStage(
+      options?.replaceTrace,
+      "shopping.markShoppingListSynced",
+      () => markShoppingListSynced(shoppingList.id),
+      {
+        detail: true,
+        parent: "replace.shoppingFinalize",
+      },
+    ),
+  );
 
   return shoppingList.id;
 }

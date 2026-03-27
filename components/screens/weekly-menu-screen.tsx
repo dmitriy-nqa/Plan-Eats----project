@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -31,6 +31,12 @@ import {
   getShoppingListCopy,
 } from "@/lib/shopping-list-copy";
 import type { CurrentWeekShoppingListSummary } from "@/lib/shopping-list-crud";
+import {
+  createReplaceDishTrace,
+  createReplaceDishTraceId,
+  isReplaceDishTraceEnabled,
+  type ReplaceDishTrace,
+} from "@/lib/replace-dish-trace";
 import {
   getWeeklyMenuSlotPrimaryItem,
   type MealType,
@@ -1801,6 +1807,10 @@ export function WeeklyMenuScreen({
   const { locale } = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const pendingReplaceTraceRef = useRef<{
+    trace: ReplaceDishTrace;
+    refreshStartedAt: number;
+  } | null>(null);
   const [sheetState, setSheetState] = useState<{
     dayIndex: number;
     mealType: MealType;
@@ -1829,6 +1839,19 @@ export function WeeklyMenuScreen({
         total: activeDay.slots.length,
       })
     : "";
+
+  useEffect(() => {
+    const pendingReplaceTrace = pendingReplaceTraceRef.current;
+
+    if (pendingReplaceTrace && !isPending) {
+      pendingReplaceTrace.trace.record(
+        "client.refreshToSettled",
+        performance.now() - pendingReplaceTrace.refreshStartedAt,
+      );
+      pendingReplaceTrace.trace.flush("success");
+      pendingReplaceTraceRef.current = null;
+    }
+  }, [isPending, menu]);
 
   useEffect(() => {
     if (!sheetState) {
@@ -1919,18 +1942,39 @@ export function WeeklyMenuScreen({
     action: (formData: FormData) => Promise<WeeklyMenuSlotMutationResult>,
     fields: Record<string, string | number>,
     onSuccess?: (result: Extract<WeeklyMenuSlotMutationResult, { status: "success" }>) => void,
+    options?: {
+      replaceTrace?: ReplaceDishTrace;
+    },
   ) {
     setSlotFeedback(null);
 
     startTransition(async () => {
-      const result = await action(buildMutationFormData(fields));
+      let result: WeeklyMenuSlotMutationResult;
+
+      try {
+        result = await (options?.replaceTrace?.time("client.serverActionRoundTrip", () =>
+          action(buildMutationFormData(fields)),
+        ) ?? action(buildMutationFormData(fields)));
+      } catch (error) {
+        options?.replaceTrace?.flush("error");
+        pendingReplaceTraceRef.current = null;
+        throw error;
+      }
 
       if (result.status === "success") {
         onSuccess?.(result);
+        if (options?.replaceTrace) {
+          pendingReplaceTraceRef.current = {
+            trace: options.replaceTrace,
+            refreshStartedAt: performance.now(),
+          };
+        }
         router.refresh();
         return;
       }
 
+      options?.replaceTrace?.flush("error");
+      pendingReplaceTraceRef.current = null;
       setSlotFeedback(getMutationErrorMessage(result.code));
     });
   }
@@ -2261,6 +2305,10 @@ export function WeeklyMenuScreen({
               }}
               onSelectDish={(dishId) => {
                 if (sheetState.pickerMode === "replace" && sheetState.slotItemId) {
+                  const replaceTrace =
+                    isReplaceDishTraceEnabled("client")
+                      ? createReplaceDishTrace("client", createReplaceDishTraceId())
+                      : undefined;
                   runSlotMutation(
                     replaceItemAction,
                     {
@@ -2268,9 +2316,13 @@ export function WeeklyMenuScreen({
                       mealType: selectedSlot.mealType,
                       slotItemId: sheetState.slotItemId,
                       dishId,
+                      ...(replaceTrace ? { __replaceTraceId: replaceTrace.traceId } : {}),
                     },
                     () => {
                       resetToOverview(selectedDay, selectedSlot);
+                    },
+                    {
+                      replaceTrace,
                     },
                   );
                   return;

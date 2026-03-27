@@ -3,6 +3,10 @@ import "server-only";
 import type { DishCategory } from "@/lib/dishes";
 import type { IngredientUnit } from "@/lib/dish-form";
 import type { AppLocale } from "@/lib/i18n/config";
+import {
+  traceReplaceDishStage,
+  type ReplaceDishTrace,
+} from "@/lib/replace-dish-trace";
 import { getTranslation } from "@/lib/i18n/translate";
 import { getCurrentFamilyId, getSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -481,6 +485,7 @@ async function syncShoppingForMealPlan(args: {
     mealType: MealType;
     expectedDishIds: string[];
   }>;
+  replaceTrace?: ReplaceDishTrace;
 }) {
   try {
     const {
@@ -488,30 +493,61 @@ async function syncShoppingForMealPlan(args: {
       syncShoppingListByMealPlanId,
       waitForMealPlanSlotSourceVisibility,
     } = await import("@/lib/shopping-list-crud");
-      const prefetchedSlots =
-        args.expectedSourceSlots && args.expectedSourceSlots.length > 0
-          ? await waitForMealPlanSlotSourceVisibility({
-              mealPlanId: args.mealPlanId,
-              targets: args.expectedSourceSlots,
-            })
-          : undefined;
-      const syncScope =
-        args.expectedSourceSlots && args.expectedSourceSlots.length > 0
-          ? {
-              type: "slots" as const,
-              slots: args.expectedSourceSlots.map((slot) => ({
-                dayIndex: slot.dayIndex,
-                mealType: slot.mealType,
-              })),
-            }
-          : {
-              type: "full" as const,
-            };
+    const prefetchedSlots =
+      args.expectedSourceSlots && args.expectedSourceSlots.length > 0
+        ? await traceReplaceDishStage(args.replaceTrace, "replace.followupRead", () =>
+            traceReplaceDishStage(
+              args.replaceTrace,
+              "replace.waitForMealPlanSlotSourceVisibility",
+              () =>
+                waitForMealPlanSlotSourceVisibility({
+                  mealPlanId: args.mealPlanId,
+                  targets: args.expectedSourceSlots ?? [],
+                }),
+              {
+                detail: true,
+                parent: "replace.followupRead",
+              },
+            ),
+          )
+        : undefined;
+    const syncScope =
+      args.expectedSourceSlots && args.expectedSourceSlots.length > 0
+        ? {
+            type: "slots" as const,
+            slots: args.expectedSourceSlots.map((slot) => ({
+              dayIndex: slot.dayIndex,
+              mealType: slot.mealType,
+            })),
+          }
+        : {
+            type: "full" as const,
+          };
 
-      await markShoppingListSourceChangedByMealPlanId(args.mealPlanId);
-      await syncShoppingListByMealPlanId(args.mealPlanId, syncScope, {
-        prefetchedSlots,
-      });
+    await traceReplaceDishStage(args.replaceTrace, "replace.shoppingSync", async () => {
+      await traceReplaceDishStage(
+        args.replaceTrace,
+        "replace.markShoppingListSourceChanged",
+        () => markShoppingListSourceChangedByMealPlanId(args.mealPlanId),
+        {
+          detail: true,
+          parent: "replace.shoppingSync",
+        },
+      );
+      await traceReplaceDishStage(
+        args.replaceTrace,
+        "replace.syncShoppingListByMealPlanId",
+        () =>
+          syncShoppingListByMealPlanId(args.mealPlanId, syncScope, {
+            prefetchedSlots,
+            replaceTrace: args.replaceTrace,
+          }),
+        {
+          detail: true,
+          parent: "replace.shoppingSync",
+        },
+      );
+    });
   } catch (error) {
     console.error("Failed to fully sync shopping list after weekly menu reuse", error);
   }
@@ -795,6 +831,7 @@ export async function replaceCurrentWeekSlotItemDish(args: {
   mealType: string;
   slotItemId: string;
   dishId: string;
+  replaceTrace?: ReplaceDishTrace;
 }) {
   assertDayIndex(args.dayIndex);
   const normalizedMealType = assertMealType(args.mealType);
@@ -803,33 +840,90 @@ export async function replaceCurrentWeekSlotItemDish(args: {
     throw new Error("Missing slot item data for replacement");
   }
 
-  await assertActiveDishAvailable(args.dishId);
-
   const supabase = getSupabaseServerClient();
-  const { familyId, mealPlan } = await ensureCurrentWeekMealPlan();
-  const slot = await fetchCurrentWeekSlotRow({
-    mealPlanId: mealPlan.id,
-    dayIndex: args.dayIndex,
-    mealType: normalizedMealType,
-  });
+  const { familyId, mealPlan, slot, persistedItems } = await traceReplaceDishStage(
+    args.replaceTrace,
+    "replace.lookupAndPrepare",
+    async () => {
+      await traceReplaceDishStage(
+        args.replaceTrace,
+        "replace.assertActiveDishAvailable",
+        () => assertActiveDishAvailable(args.dishId),
+        {
+          detail: true,
+          parent: "replace.lookupAndPrepare",
+        },
+      );
+      const { familyId, mealPlan } = await traceReplaceDishStage(
+        args.replaceTrace,
+        "replace.ensureCurrentWeekMealPlan",
+        () => ensureCurrentWeekMealPlan(),
+        {
+          detail: true,
+          parent: "replace.lookupAndPrepare",
+        },
+      );
+      const slot = await traceReplaceDishStage(
+        args.replaceTrace,
+        "replace.fetchCurrentWeekSlotRow",
+        () =>
+          fetchCurrentWeekSlotRow({
+            mealPlanId: mealPlan.id,
+            dayIndex: args.dayIndex,
+            mealType: normalizedMealType,
+          }),
+        {
+          detail: true,
+          parent: "replace.lookupAndPrepare",
+        },
+      );
 
-  if (!slot) {
-    throw new WeeklyMenuMutationError("slot_not_found");
-  }
+      if (!slot) {
+        throw new WeeklyMenuMutationError("slot_not_found");
+      }
 
-  const persistedItems = await ensurePersistedSlotItemsForSlot({
-    familyId,
-    slot,
-  });
+      const persistedItems = await traceReplaceDishStage(
+        args.replaceTrace,
+        "replace.ensurePersistedSlotItemsForSlot",
+        () =>
+          ensurePersistedSlotItemsForSlot({
+            familyId,
+            slot,
+          }),
+        {
+          detail: true,
+          parent: "replace.lookupAndPrepare",
+        },
+      );
+
+      return {
+        familyId,
+        mealPlan,
+        slot,
+        persistedItems,
+      };
+    },
+  );
 
   if (!persistedItems) {
-    await upsertLegacyCurrentWeekSlotDish({
-      familyId,
-      mealPlanId: mealPlan.id,
-      dayIndex: args.dayIndex,
-      mealType: normalizedMealType,
-      dishId: args.dishId,
-    });
+    await traceReplaceDishStage(args.replaceTrace, "replace.dbWrite", () =>
+      traceReplaceDishStage(
+        args.replaceTrace,
+        "replace.upsertLegacyCurrentWeekSlotDish",
+        () =>
+          upsertLegacyCurrentWeekSlotDish({
+            familyId,
+            mealPlanId: mealPlan.id,
+            dayIndex: args.dayIndex,
+            mealType: normalizedMealType,
+            dishId: args.dishId,
+          }),
+        {
+          detail: true,
+          parent: "replace.dbWrite",
+        },
+      ),
+    );
     await syncShoppingForMealPlan({
       mealPlanId: mealPlan.id,
       expectedSourceSlots: [
@@ -839,6 +933,7 @@ export async function replaceCurrentWeekSlotItemDish(args: {
           expectedDishIds: [args.dishId],
         },
       ],
+      replaceTrace: args.replaceTrace,
     });
     return;
   }
@@ -861,30 +956,49 @@ export async function replaceCurrentWeekSlotItemDish(args: {
     throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
   }
 
-  const { error } = await supabase
-    .from("meal_plan_slot_items")
-    .update({
-      dish_id: args.dishId,
-    })
-    .eq("id", args.slotItemId)
-    .eq("slot_id", slot.id);
+  const primaryItem = sortSlotItemRows(persistedItems)[0];
+  await traceReplaceDishStage(args.replaceTrace, "replace.dbWrite", async () => {
+    const { error } = await traceReplaceDishStage(
+      args.replaceTrace,
+      "replace.updateMealPlanSlotItem",
+      () =>
+        supabase
+          .from("meal_plan_slot_items")
+          .update({
+            dish_id: args.dishId,
+          })
+          .eq("id", args.slotItemId)
+          .eq("slot_id", slot.id),
+      {
+        detail: true,
+        parent: "replace.dbWrite",
+      },
+    );
 
-  if (error) {
-    if (error.code === "23505") {
-      throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
+    if (error) {
+      if (error.code === "23505") {
+        throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
+      }
+
+      throw error;
     }
 
-    throw error;
-  }
-
-  const primaryItem = sortSlotItemRows(persistedItems)[0];
-
-  if (primaryItem?.id === args.slotItemId) {
-    await updateSlotPrimaryDish({
-      slotId: slot.id,
-      dishId: args.dishId,
-    });
-  }
+    if (primaryItem?.id === args.slotItemId) {
+      await traceReplaceDishStage(
+        args.replaceTrace,
+        "replace.updateSlotPrimaryDish",
+        () =>
+          updateSlotPrimaryDish({
+            slotId: slot.id,
+            dishId: args.dishId,
+          }),
+        {
+          detail: true,
+          parent: "replace.dbWrite",
+        },
+      );
+    }
+  });
 
   const expectedDishIds = sortSlotItemRows(
     persistedItems.map((item) =>
@@ -906,6 +1020,7 @@ export async function replaceCurrentWeekSlotItemDish(args: {
         expectedDishIds,
       },
     ],
+    replaceTrace: args.replaceTrace,
   });
 }
 

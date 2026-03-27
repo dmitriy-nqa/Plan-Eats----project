@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { createReplaceDishTrace, readReplaceDishTraceId } from "@/lib/replace-dish-trace";
 import { isWeeklyMenuMutationError } from "@/lib/weekly-menu";
 
 export type WeeklyMenuSlotMutationResult =
@@ -109,22 +110,30 @@ export async function addWeeklySlotDishAction(
 export async function replaceWeeklySlotItemAction(
   formData: FormData,
 ): Promise<WeeklyMenuSlotMutationResult> {
+  const trace = createReplaceDishTrace("server", readReplaceDishTraceId(formData));
+
   try {
     const { replaceCurrentWeekSlotItemDish } = await import("@/lib/weekly-menu-crud");
 
     await replaceCurrentWeekSlotItemDish({
-      dayIndex: readDayIndex(formData),
-      mealType: readText(formData, "mealType"),
-      slotItemId: readText(formData, "slotItemId"),
-      dishId: readText(formData, "dishId"),
+        dayIndex: readDayIndex(formData),
+        mealType: readText(formData, "mealType"),
+        slotItemId: readText(formData, "slotItemId"),
+        dishId: readText(formData, "dishId"),
+        replaceTrace: trace,
+      });
+
+    await trace.time("server.revalidateWeeklyMenuPaths", async () => {
+      revalidateWeeklyMenuPaths();
     });
 
-    revalidateWeeklyMenuPaths();
+    trace.flush("success");
 
     return {
       status: "success",
     };
   } catch (error) {
+    trace.flush("error");
     return mapWeeklyMenuActionError(error);
   }
 }
