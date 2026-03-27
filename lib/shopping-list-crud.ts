@@ -166,6 +166,13 @@ export type CurrentWeekShoppingListPageData = {
   isSyncPending: boolean;
 };
 
+type SyncBreakdownStage = {
+  order: number;
+  name: string;
+  durationMs: number;
+  detailStages?: SyncBreakdownStage[];
+};
+
 export type EditableShoppingListItem = {
   id: string;
   shoppingListId: string;
@@ -191,6 +198,72 @@ function parseQuantity(value: number | string | null | undefined) {
 function formatQuantity(value: number | string) {
   const numericValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numericValue) ? `${numericValue}` : "";
+}
+
+function getSyncBreakdownNow() {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+function formatSyncBreakdownDuration(durationMs: number) {
+  return `${durationMs.toFixed(1)}ms`;
+}
+
+function formatSyncBreakdownStages(stages: SyncBreakdownStage[]) {
+  return stages
+    .map((stage) => `${stage.name}=${formatSyncBreakdownDuration(stage.durationMs)}`)
+    .join(" > ");
+}
+
+async function measureSyncBreakdownStage<T>(args: {
+  enabled: boolean;
+  stages: SyncBreakdownStage[];
+  order: number;
+  name: string;
+  operation: () => Promise<T> | T;
+  detailStages?: SyncBreakdownStage[];
+}) {
+  if (!args.enabled) {
+    return args.operation();
+  }
+
+  const startedAt = getSyncBreakdownNow();
+
+  try {
+    return await args.operation();
+  } finally {
+    args.stages.push({
+      order: args.order,
+      name: args.name,
+      durationMs: getSyncBreakdownNow() - startedAt,
+      detailStages: args.detailStages && args.detailStages.length > 0 ? args.detailStages : undefined,
+    });
+  }
+}
+
+function logSyncBreakdownSummary(args: {
+  trace?: ReplaceDishTrace;
+  totalMs: number;
+  stages: SyncBreakdownStage[];
+}) {
+  if (!args.trace?.enabled || args.stages.length === 0) {
+    return;
+  }
+
+  const orderedStages = [...args.stages].sort((left, right) => left.order - right.order);
+
+  console.info(
+    `[replace-dish-trace]:server:sync id=${args.trace.traceId} total=${formatSyncBreakdownDuration(args.totalMs)} ${formatSyncBreakdownStages(orderedStages)}`,
+  );
+
+  const hotspotStage = orderedStages.reduce((currentHotspot, stage) =>
+    stage.durationMs > currentHotspot.durationMs ? stage : currentHotspot,
+  );
+
+  if (hotspotStage.detailStages && hotspotStage.detailStages.length > 0) {
+    console.info(
+      `[replace-dish-trace]:server:sync:detail id=${args.trace.traceId} hotspot=${hotspotStage.name} ${formatSyncBreakdownStages(hotspotStage.detailStages)}`,
+    );
+  }
 }
 
 function uniqueStrings(values: Array<string | null | undefined>) {
@@ -1042,107 +1115,102 @@ async function upsertContributionRows(args: {
   scope: SyncScope;
   nextContributionDrafts: SlotContributionDraft[];
   replaceTrace?: ReplaceDishTrace;
+  syncBreakdownEnabled?: boolean;
 }) {
   const supabase = getSupabaseServerClient();
-  const { affectedSourceKeys, obsoleteContributionKeys } = await traceReplaceDishStage(
-    args.replaceTrace,
-    "replace.contributionUpsertDelete",
-    async () => {
-      const scopedExistingRows = await traceReplaceDishStage(
-        args.replaceTrace,
-        "contrib.loadScopedExisting",
-        () =>
-          fetchContributionRowsForShoppingList(args.shoppingListId, {
-            scope: args.scope,
-          }),
-        {
-          detail: true,
-          parent: "replace.contributionUpsertDelete",
-        },
-      );
-      const nextContributionKeys = new Set(
-        args.nextContributionDrafts.map((draft) => draft.contributionKey),
-      );
-      const obsoleteContributionKeys = scopedExistingRows
-        .map((row) => row.contribution_key)
-        .filter((key) => !nextContributionKeys.has(key));
-      const affectedSourceKeys = uniqueStrings([
-        ...scopedExistingRows.map((row) => row.source_key),
-        ...args.nextContributionDrafts.map((draft) => draft.sourceKey),
-      ]);
-
-      if (obsoleteContributionKeys.length > 0) {
-        const { error: deleteError } = await traceReplaceDishStage(
-          args.replaceTrace,
-          "contrib.deleteObsolete",
-          () =>
-            supabase
-              .from("shopping_list_item_contributions")
-              .delete()
-              .eq("shopping_list_id", args.shoppingListId)
-              .in("contribution_key", obsoleteContributionKeys),
-          {
-            detail: true,
-            parent: "replace.contributionUpsertDelete",
-          },
-        );
-
-        if (deleteError) {
-          throw deleteError;
-        }
-      }
-
-      if (args.nextContributionDrafts.length > 0) {
-        const { error: upsertError } = await traceReplaceDishStage(
-          args.replaceTrace,
-          "contrib.upsert",
-          () =>
-            supabase
-              .from("shopping_list_item_contributions")
-              .upsert(
-                args.nextContributionDrafts.map((draft) => ({
-                  shopping_list_id: args.shoppingListId,
-                  meal_plan_id: args.mealPlanId,
-                  contribution_key: draft.contributionKey,
-                  source_key: draft.sourceKey,
-                  day_index: draft.dayIndex,
-                  meal_type: draft.mealType,
-                  dish_id: draft.dishId,
-                  product_id: draft.productId,
-                  ingredient_name: draft.ingredientName,
-                  normalized_name: draft.normalizedName,
-                  quantity: draft.quantity,
-                  unit: draft.unit,
-                })),
-                {
-                  onConflict: "shopping_list_id,contribution_key",
-                },
-              ),
-          {
-            detail: true,
-            parent: "replace.contributionUpsertDelete",
-          },
-        );
-
-        if (upsertError) {
-          throw upsertError;
-        }
-      }
-
-      return {
-        affectedSourceKeys,
-        obsoleteContributionKeys,
-      };
-    },
-  );
-
-  await materializeProjectionRows({
-    shoppingListId: args.shoppingListId,
-    sourceKeys: affectedSourceKeys,
-    fallbackContributionDrafts: args.nextContributionDrafts,
-    deletedContributionKeys: obsoleteContributionKeys,
-    replaceTrace: args.replaceTrace,
+  const detailStages: SyncBreakdownStage[] = [];
+  const scopedExistingRows = await measureSyncBreakdownStage({
+    enabled: args.syncBreakdownEnabled ?? false,
+    stages: detailStages,
+    order: 1,
+    name: "contrib.loadScopedExisting",
+    operation: () =>
+      fetchContributionRowsForShoppingList(args.shoppingListId, {
+        scope: args.scope,
+      }),
   });
+  const nextContributionKeys = new Set(
+    args.nextContributionDrafts.map((draft) => draft.contributionKey),
+  );
+  const obsoleteContributionKeys = scopedExistingRows
+    .map((row) => row.contribution_key)
+    .filter((key) => !nextContributionKeys.has(key));
+  const affectedSourceKeys = uniqueStrings([
+    ...scopedExistingRows.map((row) => row.source_key),
+    ...args.nextContributionDrafts.map((draft) => draft.sourceKey),
+  ]);
+
+  if (obsoleteContributionKeys.length > 0) {
+    const { error: deleteError } = await measureSyncBreakdownStage({
+      enabled: args.syncBreakdownEnabled ?? false,
+      stages: detailStages,
+      order: 2,
+      name: "contrib.deleteObsolete",
+      operation: () =>
+        supabase
+          .from("shopping_list_item_contributions")
+          .delete()
+          .eq("shopping_list_id", args.shoppingListId)
+          .in("contribution_key", obsoleteContributionKeys),
+    });
+
+    if (deleteError) {
+      throw deleteError;
+    }
+  }
+
+  if (args.nextContributionDrafts.length > 0) {
+    const { error: upsertError } = await measureSyncBreakdownStage({
+      enabled: args.syncBreakdownEnabled ?? false,
+      stages: detailStages,
+      order: 3,
+      name: "contrib.upsert",
+      operation: () =>
+        supabase
+          .from("shopping_list_item_contributions")
+          .upsert(
+            args.nextContributionDrafts.map((draft) => ({
+              shopping_list_id: args.shoppingListId,
+              meal_plan_id: args.mealPlanId,
+              contribution_key: draft.contributionKey,
+              source_key: draft.sourceKey,
+              day_index: draft.dayIndex,
+              meal_type: draft.mealType,
+              dish_id: draft.dishId,
+              product_id: draft.productId,
+              ingredient_name: draft.ingredientName,
+              normalized_name: draft.normalizedName,
+              quantity: draft.quantity,
+              unit: draft.unit,
+            })),
+            {
+              onConflict: "shopping_list_id,contribution_key",
+            },
+          ),
+    });
+
+    if (upsertError) {
+      throw upsertError;
+    }
+  }
+
+  await measureSyncBreakdownStage({
+    enabled: args.syncBreakdownEnabled ?? false,
+    stages: detailStages,
+    order: 4,
+    name: "contrib.materializeProjectionRows",
+    operation: () =>
+      materializeProjectionRows({
+        shoppingListId: args.shoppingListId,
+        sourceKeys: affectedSourceKeys,
+        fallbackContributionDrafts: args.nextContributionDrafts,
+        deletedContributionKeys: obsoleteContributionKeys,
+      }),
+  });
+
+  return {
+    detailStages,
+  };
 }
 
 async function markShoppingListSynced(shoppingListId: string) {
@@ -1200,42 +1268,36 @@ export async function syncShoppingListByMealPlanId(
     replaceTrace?: ReplaceDishTrace;
   },
 ) {
-  const shoppingList = await traceReplaceDishStage(
-    options?.replaceTrace,
-    "shopping.ensureShoppingListByMealPlanId",
-    () => ensureShoppingListByMealPlanId(mealPlanId),
-    {
-      detail: true,
-      parent: "replace.loadSyncInputs",
-    },
-  );
-  const [slots, productMaps] = await traceReplaceDishStage(
-    options?.replaceTrace,
-    "replace.loadSyncInputs",
-    () =>
-      Promise.all([
+  const syncBreakdownEnabled = options?.replaceTrace?.enabled ?? false;
+  const syncBreakdownStartedAt = getSyncBreakdownNow();
+  const syncStages: SyncBreakdownStage[] = [];
+
+  const shoppingList = await measureSyncBreakdownStage({
+    enabled: syncBreakdownEnabled,
+    stages: syncStages,
+    order: 1,
+    name: "shopping.ensureShoppingListByMealPlanId",
+    operation: () => ensureShoppingListByMealPlanId(mealPlanId),
+  });
+  const [slots, productMaps] = await Promise.all([
+    measureSyncBreakdownStage({
+      enabled: syncBreakdownEnabled,
+      stages: syncStages,
+      order: 2,
+      name: "shopping.loadMealPlanSlots",
+      operation: () =>
         options?.prefetchedSlots
           ? Promise.resolve(options.prefetchedSlots)
-          : traceReplaceDishStage(
-              options?.replaceTrace,
-              "shopping.fetchMealPlanSlots",
-              () => fetchMealPlanSlots(mealPlanId),
-              {
-                detail: true,
-                parent: "replace.loadSyncInputs",
-              },
-            ),
-        traceReplaceDishStage(
-          options?.replaceTrace,
-          "shopping.fetchProductResolutionMaps",
-          () => fetchProductResolutionMaps(),
-          {
-            detail: true,
-            parent: "replace.loadSyncInputs",
-          },
-        ),
-      ]),
-  );
+          : fetchMealPlanSlots(mealPlanId),
+    }),
+    measureSyncBreakdownStage({
+      enabled: syncBreakdownEnabled,
+      stages: syncStages,
+      order: 3,
+      name: "shopping.fetchProductResolutionMaps",
+      operation: () => fetchProductResolutionMaps(),
+    }),
+  ]);
   const targetSlots =
     scope.type === "full"
       ? slots
@@ -1245,19 +1307,20 @@ export async function syncShoppingListByMealPlanId(
               targetSlot.dayIndex === slot.dayIndex && targetSlot.mealType === slot.mealType,
           ),
         );
-  const dishIngredientsByDishId = await traceReplaceDishStage(
-    options?.replaceTrace,
-    "shopping.fetchDishIngredientsByDishIds",
-    () => fetchDishIngredientsByDishIds(uniqueStrings(targetSlots.map((slot) => slot.dishId))),
-    {
-      detail: true,
-      parent: "replace.loadSyncInputs",
-    },
-  );
-  const nextContributionDrafts = await traceReplaceDishStage(
-    options?.replaceTrace,
-    "shopping.buildSlotContributionDrafts",
-    async () =>
+  const dishIngredientsByDishId = await measureSyncBreakdownStage({
+    enabled: syncBreakdownEnabled,
+    stages: syncStages,
+    order: 4,
+    name: "shopping.fetchDishIngredientsByDishIds",
+    operation: () =>
+      fetchDishIngredientsByDishIds(uniqueStrings(targetSlots.map((slot) => slot.dishId))),
+  });
+  const nextContributionDrafts = await measureSyncBreakdownStage({
+    enabled: syncBreakdownEnabled,
+    stages: syncStages,
+    order: 5,
+    name: "shopping.buildSlotContributionDrafts",
+    operation: () =>
       targetSlots.flatMap((slot) =>
         buildSlotContributionDrafts({
           mealPlanId,
@@ -1266,30 +1329,41 @@ export async function syncShoppingListByMealPlanId(
           productMaps,
         }),
       ),
-    {
-      detail: true,
-      parent: "replace.loadSyncInputs",
-    },
-  );
-
-  await upsertContributionRows({
-    shoppingListId: shoppingList.id,
-    mealPlanId,
-    scope,
-    nextContributionDrafts,
-    replaceTrace: options?.replaceTrace,
   });
-  await traceReplaceDishStage(options?.replaceTrace, "replace.shoppingFinalize", () =>
-    traceReplaceDishStage(
-      options?.replaceTrace,
-      "shopping.markShoppingListSynced",
-      () => markShoppingListSynced(shoppingList.id),
-      {
-        detail: true,
-        parent: "replace.shoppingFinalize",
-      },
-    ),
-  );
+  const contributionBreakdown = await measureSyncBreakdownStage({
+    enabled: syncBreakdownEnabled,
+    stages: syncStages,
+    order: 6,
+    name: "shopping.upsertContributionRows",
+    operation: () =>
+      upsertContributionRows({
+        shoppingListId: shoppingList.id,
+        mealPlanId,
+        scope,
+        nextContributionDrafts,
+        replaceTrace: options?.replaceTrace,
+        syncBreakdownEnabled,
+      }),
+  });
+  const upsertStage = syncStages.find((stage) => stage.name === "shopping.upsertContributionRows");
+
+  if (upsertStage && contributionBreakdown.detailStages.length > 0) {
+    upsertStage.detailStages = contributionBreakdown.detailStages;
+  }
+
+  await measureSyncBreakdownStage({
+    enabled: syncBreakdownEnabled,
+    stages: syncStages,
+    order: 7,
+    name: "shopping.markShoppingListSynced",
+    operation: () => markShoppingListSynced(shoppingList.id),
+  });
+
+  logSyncBreakdownSummary({
+    trace: options?.replaceTrace,
+    totalMs: getSyncBreakdownNow() - syncBreakdownStartedAt,
+    stages: syncStages,
+  });
 
   return shoppingList.id;
 }
