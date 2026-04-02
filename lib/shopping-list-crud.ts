@@ -6,6 +6,7 @@ import type { IngredientUnit } from "@/lib/dish-form";
 import {
   formatSourceVersionForWrite,
   getAuthoritativeMealPlanSourceVersion,
+  hasPublishedShoppingListBaseline,
   isShoppingListFreshnessState,
   mealPlanSourceAuthorityColumn,
   shoppingListControlPlaneSelect,
@@ -1267,6 +1268,12 @@ async function advanceShoppingListControlStateAfterSuccessfulSync(shoppingListId
   }
 }
 
+function getPendingFreshnessStateForSourceChange(shoppingList: ShoppingListControlPlaneRow) {
+  return hasPublishedShoppingListBaseline(shoppingList)
+    ? "stale_pending"
+    : "no_projection";
+}
+
 async function runSynchronousShoppingListRecompute(args: {
   shoppingListId: string;
   mealPlanId: string;
@@ -1308,7 +1315,7 @@ export async function markShoppingListSourceChangedByMealPlanId(mealPlanId: stri
     .update({
       last_source_change_at: now,
       needs_resync: true,
-      freshness_state: "stale_pending",
+      freshness_state: getPendingFreshnessStateForSourceChange(shoppingList),
       recompute_requested_at: now,
       claim_token: null,
       claim_target_version: null,
@@ -1558,9 +1565,15 @@ export async function fetchCurrentWeekShoppingListSummary(): Promise<CurrentWeek
 export async function fetchCurrentWeekShoppingListItem(
   itemId: string,
 ): Promise<EditableShoppingListItem | null> {
-  const snapshot = await ensureCurrentWeekShoppingListFresh();
+  const { mealPlan } = await fetchCurrentWeekMealPlan();
 
-  if (!snapshot) {
+  if (!mealPlan) {
+    return null;
+  }
+
+  const shoppingList = await fetchShoppingListByMealPlanId(mealPlan.id);
+
+  if (!shoppingList || !hasPublishedShoppingListBaseline(shoppingList)) {
     return null;
   }
 
@@ -1570,7 +1583,7 @@ export async function fetchCurrentWeekShoppingListItem(
     .select(
       "id, shopping_list_id, ingredient_name, normalized_name, quantity, unit, source_type, is_checked, product_id, source_key",
     )
-    .eq("shopping_list_id", snapshot.shoppingListId)
+    .eq("shopping_list_id", shoppingList.id)
     .eq("id", itemId)
     .maybeSingle();
 
@@ -1777,7 +1790,6 @@ export async function upsertShoppingListItemAdjustment(input: {
   });
 
   await materializeVisibleAutoProjectionRows(visibleAutoMaterializationPlan);
-  await advanceShoppingListControlStateAfterSuccessfulSync(input.shoppingListId);
   revalidatePath("/products");
 }
 

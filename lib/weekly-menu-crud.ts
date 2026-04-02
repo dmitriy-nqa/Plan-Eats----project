@@ -448,80 +448,12 @@ async function insertSlotItems(args: {
   }
 }
 
-async function syncShoppingForSlot(args: {
-  mealPlanId: string;
-  dayIndex: number;
-  mealType: MealType;
-}) {
-  try {
-    const {
-      markShoppingListSourceChangedByMealPlanId,
-      syncShoppingListByMealPlanId,
-    } = await import("@/lib/shopping-list-crud");
+async function recordShoppingListSourceChange(mealPlanId: string) {
+  const { markShoppingListSourceChangedByMealPlanId } = await import(
+    "@/lib/shopping-list-crud"
+  );
 
-    const syncScope = {
-      type: "slots" as const,
-      slots: [
-        {
-          dayIndex: args.dayIndex,
-          mealType: args.mealType,
-        },
-      ],
-    };
-
-    await markShoppingListSourceChangedByMealPlanId(args.mealPlanId);
-    await syncShoppingListByMealPlanId(args.mealPlanId, syncScope);
-  } catch (error) {
-    console.error("Failed to sync shopping list after weekly menu change", error);
-  }
-}
-
-async function syncShoppingForMealPlan(args: {
-  mealPlanId: string;
-  expectedSourceSlots?: Array<{
-    dayIndex: number;
-    mealType: MealType;
-    expectedDishIds: string[];
-  }>;
-}) {
-  try {
-    const {
-      markShoppingListSourceChangedByMealPlanId,
-      syncShoppingListByMealPlanId,
-      waitForMealPlanSlotSourceVisibility,
-    } = await import("@/lib/shopping-list-crud");
-
-    const expectedSlotCount = args.expectedSourceSlots?.length ?? 0;
-    const prefetchedSlots =
-      args.expectedSourceSlots && args.expectedSourceSlots.length > 0
-        ? await waitForMealPlanSlotSourceVisibility({
-            mealPlanId: args.mealPlanId,
-            targets: args.expectedSourceSlots ?? [],
-          })
-        : undefined;
-    const syncScope =
-      args.expectedSourceSlots && args.expectedSourceSlots.length > 0
-        ? {
-            type: "slots" as const,
-            slots: args.expectedSourceSlots.map((slot) => ({
-              dayIndex: slot.dayIndex,
-              mealType: slot.mealType,
-            })),
-          }
-        : {
-            type: "full" as const,
-          };
-
-    await markShoppingListSourceChangedByMealPlanId(args.mealPlanId);
-    await syncShoppingListByMealPlanId(args.mealPlanId, syncScope, {
-      prefetchedSlots:
-        expectedSlotCount > 0
-          ? prefetchedSlots
-          : undefined,
-    });
-  } catch (error) {
-    console.error("Failed to fully sync shopping list after weekly menu reuse", error);
-  }
+  await markShoppingListSourceChangedByMealPlanId(mealPlanId);
 }
 
 async function fetchDishMaps(args: {
@@ -738,22 +670,14 @@ export async function addDishToCurrentWeekSlot(args: {
 
     if (error) {
       if (isMissingSlotItemStorageError(error)) {
-        await syncShoppingForSlot({
-          mealPlanId: mealPlan.id,
-          dayIndex: args.dayIndex,
-          mealType: normalizedMealType,
-        });
+        await recordShoppingListSourceChange(mealPlan.id);
         return;
       }
 
       throw error;
     }
 
-    await syncShoppingForSlot({
-      mealPlanId: mealPlan.id,
-      dayIndex: args.dayIndex,
-      mealType: normalizedMealType,
-    });
+    await recordShoppingListSourceChange(mealPlan.id);
 
     return;
   }
@@ -790,11 +714,7 @@ export async function addDishToCurrentWeekSlot(args: {
     throw error;
   }
 
-  await syncShoppingForSlot({
-    mealPlanId: mealPlan.id,
-    dayIndex: args.dayIndex,
-    mealType: normalizedMealType,
-  });
+  await recordShoppingListSourceChange(mealPlan.id);
 }
 
 export async function replaceCurrentWeekSlotItemDish(args: {
@@ -830,6 +750,10 @@ export async function replaceCurrentWeekSlotItemDish(args: {
   });
 
   if (!persistedItems) {
+    if (slot.dishId === args.dishId) {
+      return;
+    }
+
     await upsertLegacyCurrentWeekSlotDish({
       familyId,
       mealPlanId: mealPlan.id,
@@ -837,16 +761,7 @@ export async function replaceCurrentWeekSlotItemDish(args: {
       mealType: normalizedMealType,
       dishId: args.dishId,
     });
-    await syncShoppingForMealPlan({
-      mealPlanId: mealPlan.id,
-      expectedSourceSlots: [
-        {
-          dayIndex: args.dayIndex,
-          mealType: normalizedMealType,
-          expectedDishIds: [args.dishId],
-        },
-      ],
-    });
+    await recordShoppingListSourceChange(mealPlan.id);
     return;
   }
 
@@ -893,27 +808,7 @@ export async function replaceCurrentWeekSlotItemDish(args: {
     });
   }
 
-  const expectedDishIds = sortSlotItemRows(
-    persistedItems.map((item) =>
-      item.id === args.slotItemId
-        ? {
-            ...item,
-            dish_id: args.dishId,
-          }
-        : item,
-    ),
-  ).map((item) => item.dish_id);
-
-  await syncShoppingForMealPlan({
-    mealPlanId: mealPlan.id,
-    expectedSourceSlots: [
-      {
-        dayIndex: args.dayIndex,
-        mealType: normalizedMealType,
-        expectedDishIds,
-      },
-    ],
-  });
+  await recordShoppingListSourceChange(mealPlan.id);
 }
 
 export async function removeCurrentWeekSlotItem(args: {
@@ -1002,11 +897,7 @@ export async function removeCurrentWeekSlotItem(args: {
     }
   }
 
-  await syncShoppingForSlot({
-    mealPlanId: mealPlan.id,
-    dayIndex: args.dayIndex,
-    mealType: normalizedMealType,
-  });
+  await recordShoppingListSourceChange(mealPlan.id);
 
   return {
     slotIsEmpty: remainingItems.length === 0,
@@ -1083,16 +974,7 @@ export async function copyCurrentWeekSlotItem(args: {
       dishIds: [sourceItem.dish_id],
     });
 
-    await syncShoppingForMealPlan({
-      mealPlanId: mealPlan.id,
-      expectedSourceSlots: [
-        {
-          dayIndex: args.targetDayIndex,
-          mealType: targetMealType,
-          expectedDishIds: [sourceItem.dish_id],
-        },
-      ],
-    });
+    await recordShoppingListSourceChange(mealPlan.id);
     return;
   }
 
@@ -1136,16 +1018,7 @@ export async function copyCurrentWeekSlotItem(args: {
     });
   }
 
-  await syncShoppingForMealPlan({
-    mealPlanId: mealPlan.id,
-    expectedSourceSlots: [
-      {
-        dayIndex: args.targetDayIndex,
-        mealType: targetMealType,
-        expectedDishIds: [...targetItems.map((item) => item.dish_id), sourceItem.dish_id],
-      },
-    ],
-  });
+  await recordShoppingListSourceChange(mealPlan.id);
 }
 
 export async function copyCurrentWeekSlot(args: {
@@ -1210,16 +1083,7 @@ export async function copyCurrentWeekSlot(args: {
       dishIds: sourceDishIds,
     });
 
-    await syncShoppingForMealPlan({
-      mealPlanId: mealPlan.id,
-      expectedSourceSlots: [
-        {
-          dayIndex: args.targetDayIndex,
-          mealType: targetMealType,
-          expectedDishIds: sourceDishIds,
-        },
-      ],
-    });
+    await recordShoppingListSourceChange(mealPlan.id);
     return;
   }
 
@@ -1245,16 +1109,7 @@ export async function copyCurrentWeekSlot(args: {
     dishId: sourceDishIds[0],
   });
 
-  await syncShoppingForMealPlan({
-    mealPlanId: mealPlan.id,
-    expectedSourceSlots: [
-      {
-        dayIndex: args.targetDayIndex,
-        mealType: targetMealType,
-        expectedDishIds: sourceDishIds,
-      },
-    ],
-  });
+  await recordShoppingListSourceChange(mealPlan.id);
 }
 
 export async function assignDishToCurrentWeekSlot({
@@ -1295,6 +1150,10 @@ export async function assignDishToCurrentWeekSlot({
   });
 
   if (!persistedItems) {
+    if (existingSlot.dishId === dishId) {
+      return;
+    }
+
     await upsertLegacyCurrentWeekSlotDish({
       familyId,
       mealPlanId: mealPlan.id,
@@ -1302,11 +1161,7 @@ export async function assignDishToCurrentWeekSlot({
       mealType: normalizedMealType,
       dishId,
     });
-    await syncShoppingForSlot({
-      mealPlanId: mealPlan.id,
-      dayIndex,
-      mealType: normalizedMealType,
-    });
+    await recordShoppingListSourceChange(mealPlan.id);
     return;
   }
 
@@ -1346,20 +1201,21 @@ export async function clearCurrentWeekSlot({
     return;
   }
 
-  const { error } = await supabase
-    .from("meal_plan_slots")
-    .delete()
-    .eq("meal_plan_id", mealPlan.id)
-    .eq("day_index", dayIndex)
-    .eq("meal_type", normalizedMealType);
+  const existingSlot = await fetchCurrentWeekSlotRow({
+    mealPlanId: mealPlan.id,
+    dayIndex,
+    mealType: normalizedMealType,
+  });
+
+  if (!existingSlot) {
+    return;
+  }
+
+  const { error } = await supabase.from("meal_plan_slots").delete().eq("id", existingSlot.id);
 
   if (error) {
     throw error;
   }
 
-  await syncShoppingForSlot({
-    mealPlanId: mealPlan.id,
-    dayIndex,
-    mealType: normalizedMealType,
-  });
+  await recordShoppingListSourceChange(mealPlan.id);
 }
