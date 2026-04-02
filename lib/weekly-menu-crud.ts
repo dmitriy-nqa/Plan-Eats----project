@@ -449,11 +449,15 @@ async function insertSlotItems(args: {
 }
 
 async function recordShoppingListSourceChange(mealPlanId: string) {
-  const { markShoppingListSourceChangedByMealPlanId } = await import(
+  const {
+    markShoppingListSourceChangedByMealPlanId,
+    scheduleWeeklyMenuShoppingListControlPass,
+  } = await import(
     "@/lib/shopping-list-crud"
   );
 
   await markShoppingListSourceChangedByMealPlanId(mealPlanId);
+  scheduleWeeklyMenuShoppingListControlPass(mealPlanId);
 }
 
 async function fetchDishMaps(args: {

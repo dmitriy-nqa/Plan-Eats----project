@@ -1,17 +1,21 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 
 import type { IngredientUnit } from "@/lib/dish-form";
 import {
   formatSourceVersionForWrite,
   getAuthoritativeMealPlanSourceVersion,
+  getPublishedShoppingListSourceVersion,
   hasPublishedShoppingListBaseline,
   isShoppingListFreshnessState,
   mealPlanSourceAuthorityColumn,
   shoppingListControlPlaneSelect,
   type MealPlanSourceAuthorityRow,
   type ShoppingListControlPlaneRow,
+  type ShoppingListFreshnessState,
 } from "@/lib/shopping-list-authority";
 import {
   buildShoppingListContributionKey,
@@ -154,6 +158,9 @@ type ShoppingListItemSnapshot = {
 };
 
 const SHOPPING_LIST_SYNC_TIMEOUT_MS = 5000;
+const SHOPPING_LIST_EXECUTOR_LEASE_MS = 15000;
+const SHOPPING_LIST_EXECUTOR_RECLAIM_DELAY_MS =
+  SHOPPING_LIST_EXECUTOR_LEASE_MS + 250;
 const SHOPPING_LIST_LEGACY_FRESHNESS_SELECT =
   "generated_at, last_synced_at, last_source_change_at, needs_resync";
 const SHOPPING_LIST_SELECT = [
@@ -233,6 +240,39 @@ type VisibleAutoMaterializationPlan = {
   upsertRows: ProjectedAutoItemRow[];
   deleteSourceKeys: string[];
 };
+
+type GuardedPublishPlan = {
+  shoppingListId: string;
+  nextContributionRows: Array<{
+    shopping_list_id: string;
+    meal_plan_id: string;
+    contribution_key: string;
+    source_key: string;
+    day_index: number;
+    meal_type: MealType;
+    dish_id: string;
+    product_id: string | null;
+    ingredient_name: string;
+    normalized_name: string;
+    quantity: number;
+    unit: IngredientUnit;
+  }>;
+};
+
+type ShoppingListClaimRpcRow = {
+  claimed: boolean;
+  claim_target_version: string | number | bigint | null;
+};
+
+type ShoppingListClaimResult =
+  | {
+      claimed: false;
+    }
+  | {
+      claimed: true;
+      claimToken: string;
+      claimTargetVersion: bigint;
+    };
 
 function parseQuantity(value: number | string | null | undefined) {
   const numericValue = typeof value === "number" ? value : Number(value);
@@ -438,6 +478,20 @@ async function fetchMealPlanSourceAuthority(mealPlanId: string) {
   return data as MealPlanSourceAuthorityRow;
 }
 
+async function fetchShoppingListAuthorityContext(shoppingListId: string) {
+  const shoppingList = await fetchShoppingListById(shoppingListId);
+  const mealPlanSourceAuthority = await fetchMealPlanSourceAuthority(
+    shoppingList.meal_plan_id,
+  );
+
+  return {
+    shoppingList,
+    currentSourceVersion: getAuthoritativeMealPlanSourceVersion(
+      mealPlanSourceAuthority,
+    ),
+  };
+}
+
 async function bumpMealPlanSourceVersion(mealPlanId: string) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase.rpc("bump_meal_plan_source_version", {
@@ -528,6 +582,77 @@ async function ensureShoppingListByMealPlanId(mealPlanId: string) {
   }
 
   return retriedList;
+}
+
+function isClaimLeaseLive(shoppingList: ShoppingListControlPlaneRow) {
+  return (
+    shoppingList.claim_token !== null &&
+    shoppingList.claim_expires_at !== null &&
+    new Date(shoppingList.claim_expires_at).getTime() > Date.now()
+  );
+}
+
+function getClaimlessFreshnessState(args: {
+  shoppingList: ShoppingListControlPlaneRow;
+  currentSourceVersion: bigint;
+}): ShoppingListFreshnessState {
+  const publishedSourceVersion = getPublishedShoppingListSourceVersion(
+    args.shoppingList,
+  );
+
+  if (
+    publishedSourceVersion !== null &&
+    publishedSourceVersion === args.currentSourceVersion
+  ) {
+    return "fresh";
+  }
+
+  return hasPublishedShoppingListBaseline(args.shoppingList)
+    ? "stale_pending"
+    : "no_projection";
+}
+
+function formatShoppingListFailureReason(error: unknown) {
+  if (error instanceof Error) {
+    return error.message.slice(0, 500);
+  }
+
+  return "Unknown shopping recompute failure.";
+}
+
+async function tryClaimShoppingListRecompute(
+  shoppingListId: string,
+): Promise<ShoppingListClaimResult> {
+  const supabase = getSupabaseServerClient();
+  const claimToken = randomUUID();
+  const claimExpiresAt = new Date(
+    Date.now() + SHOPPING_LIST_EXECUTOR_LEASE_MS,
+  ).toISOString();
+  const { data, error } = await supabase.rpc("claim_shopping_list_recompute", {
+    target_shopping_list_id: shoppingListId,
+    next_claim_token: claimToken,
+    next_claim_expires_at: claimExpiresAt,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const claimRow = ((data ?? []) as ShoppingListClaimRpcRow[])[0];
+
+  if (!claimRow?.claimed || claimRow.claim_target_version === null) {
+    return {
+      claimed: false,
+    };
+  }
+
+  return {
+    claimed: true,
+    claimToken,
+    claimTargetVersion: getAuthoritativeMealPlanSourceVersion({
+      source_version: claimRow.claim_target_version,
+    }),
+  };
 }
 
 async function fetchMealPlanSlots(mealPlanId: string) {
@@ -1163,11 +1288,63 @@ async function materializeVisibleAutoProjectionRows(plan: VisibleAutoMaterializa
   }
 }
 
-// Compatibility seam only:
-// This persists the candidate base into legacy contribution storage so the synchronous
-// path can still assemble continuity overlays from existing contribution rows.
-// It is not the semantic publish step for visible auto rows; that remains bounded to
-// materializeVisibleAutoProjectionRows(), which is where future guarded publish will attach.
+async function buildGuardedPublishPlan(args: {
+  shoppingListId: string;
+  candidateBaseProjection: CandidateBaseProjection;
+}): Promise<GuardedPublishPlan> {
+  return {
+    shoppingListId: args.shoppingListId,
+    nextContributionRows: args.candidateBaseProjection.nextContributionDrafts.map(
+      (draft) => ({
+        shopping_list_id: args.shoppingListId,
+        meal_plan_id: args.candidateBaseProjection.mealPlanId,
+        contribution_key: draft.contributionKey,
+        source_key: draft.sourceKey,
+        day_index: draft.dayIndex,
+        meal_type: draft.mealType,
+        dish_id: draft.dishId,
+        product_id: draft.productId,
+        ingredient_name: draft.ingredientName,
+        normalized_name: draft.normalizedName,
+        quantity: draft.quantity,
+        unit: draft.unit,
+      }),
+    ),
+  };
+}
+
+async function guardedPublishShoppingListProjection(args: {
+  shoppingListId: string;
+  claimToken: string;
+  claimTargetVersion: bigint;
+  publishPlan: GuardedPublishPlan;
+}) {
+  const supabase = getSupabaseServerClient();
+  const publishedAt = new Date().toISOString();
+  const { data, error } = await supabase.rpc(
+    "guarded_publish_shopping_list_projection",
+    {
+      target_shopping_list_id: args.shoppingListId,
+      expected_claim_token: args.claimToken,
+      expected_claim_target_version: formatSourceVersionForWrite(
+        args.claimTargetVersion,
+      ),
+      published_at: publishedAt,
+      next_contributions: args.publishPlan.nextContributionRows,
+    },
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  return Boolean(data);
+}
+
+// Legacy compatibility seam only:
+// This persists the candidate base for the remaining mixed-mode synchronous path.
+// The hardened weekly-menu path must not use this helper because candidate state is
+// not allowed to become baseline authority outside guarded publish.
 async function persistCandidateBaseProjection(args: {
   shoppingListId: string;
   candidateBaseProjection: CandidateBaseProjection;
@@ -1274,13 +1451,13 @@ function getPendingFreshnessStateForSourceChange(shoppingList: ShoppingListContr
     : "no_projection";
 }
 
-async function runSynchronousShoppingListRecompute(args: {
+async function runLegacyCompatibilityShoppingListRecompute(args: {
   shoppingListId: string;
   mealPlanId: string;
   scope: SyncScope;
   prefetchedSlots?: Awaited<ReturnType<typeof fetchMealPlanSlots>>;
 }) {
-  // Slice 2 pipeline:
+  // Legacy compatibility pipeline only:
   // 1. compute candidate base projection from current meal-plan source state
   // 2. assemble continuity overlays on top of that candidate base
   // 3. materialize only the visible auto projection rows
@@ -1302,6 +1479,159 @@ async function runSynchronousShoppingListRecompute(args: {
 
   await materializeVisibleAutoProjectionRows(visibleAutoMaterializationPlan);
   await advanceShoppingListControlStateAfterSuccessfulSync(args.shoppingListId);
+}
+
+async function clearOwnedShoppingListClaim(args: {
+  shoppingListId: string;
+  claimToken: string;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { shoppingList, currentSourceVersion } =
+    await fetchShoppingListAuthorityContext(args.shoppingListId);
+
+  if (shoppingList.claim_token !== args.claimToken) {
+    return false;
+  }
+
+  const nextFreshnessState = getClaimlessFreshnessState({
+    shoppingList,
+    currentSourceVersion,
+  });
+  const updatePayload: Record<string, string | null> = {
+    claim_token: null,
+    claim_target_version: null,
+    claim_expires_at: null,
+    freshness_state: nextFreshnessState,
+  };
+
+  if (nextFreshnessState === "fresh") {
+    updatePayload.recompute_requested_at = null;
+  }
+
+  const { error } = await supabase
+    .from("shopping_lists")
+    .update(updatePayload)
+    .eq("id", args.shoppingListId)
+    .eq("claim_token", args.claimToken);
+
+  if (error) {
+    throw error;
+  }
+
+  return true;
+}
+
+async function recordOwnedShoppingListFailure(args: {
+  shoppingListId: string;
+  claimToken: string;
+  claimTargetVersion: bigint;
+  error: unknown;
+}) {
+  const supabase = getSupabaseServerClient();
+  const { shoppingList, currentSourceVersion } =
+    await fetchShoppingListAuthorityContext(args.shoppingListId);
+
+  if (shoppingList.claim_token !== args.claimToken) {
+    return false;
+  }
+
+  if (
+    !isClaimLeaseLive(shoppingList) ||
+    currentSourceVersion !== args.claimTargetVersion
+  ) {
+    return clearOwnedShoppingListClaim({
+      shoppingListId: args.shoppingListId,
+      claimToken: args.claimToken,
+    });
+  }
+
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("shopping_lists")
+    .update({
+      freshness_state: "failed_latest",
+      claim_token: null,
+      claim_target_version: null,
+      claim_expires_at: null,
+      last_failure_at: now,
+      last_failure_source_version: formatSourceVersionForWrite(
+        args.claimTargetVersion,
+      ),
+      last_failure_reason: formatShoppingListFailureReason(args.error),
+    })
+    .eq("id", args.shoppingListId)
+    .eq("claim_token", args.claimToken);
+
+  if (error) {
+    throw error;
+  }
+
+  return true;
+}
+
+async function runWeeklyMenuShoppingListControlPassByMealPlanId(mealPlanId: string) {
+  const shoppingList = await ensureShoppingListByMealPlanId(mealPlanId);
+  const claim = await tryClaimShoppingListRecompute(shoppingList.id);
+
+  if (!claim.claimed) {
+    return false;
+  }
+
+  try {
+    const candidateBaseProjection = await computeCandidateBaseProjection({
+      mealPlanId,
+      scope: { type: "full" },
+    });
+    const publishPlan = await buildGuardedPublishPlan({
+      shoppingListId: shoppingList.id,
+      candidateBaseProjection,
+    });
+    const published = await guardedPublishShoppingListProjection({
+      shoppingListId: shoppingList.id,
+      claimToken: claim.claimToken,
+      claimTargetVersion: claim.claimTargetVersion,
+      publishPlan,
+    });
+
+    if (!published) {
+      await clearOwnedShoppingListClaim({
+        shoppingListId: shoppingList.id,
+        claimToken: claim.claimToken,
+      });
+      return false;
+    }
+
+    revalidatePath("/products");
+    return true;
+  } catch (error) {
+    await recordOwnedShoppingListFailure({
+      shoppingListId: shoppingList.id,
+      claimToken: claim.claimToken,
+      claimTargetVersion: claim.claimTargetVersion,
+      error,
+    });
+    throw error;
+  }
+}
+
+async function runWeeklyMenuShoppingListControlPassSafely(mealPlanId: string) {
+  try {
+    await runWeeklyMenuShoppingListControlPassByMealPlanId(mealPlanId);
+  } catch (error) {
+    console.error(
+      `Failed weekly-menu shopping control pass for meal plan ${mealPlanId}`,
+      error,
+    );
+  }
+}
+
+export function scheduleWeeklyMenuShoppingListControlPass(mealPlanId: string) {
+  void runWeeklyMenuShoppingListControlPassSafely(mealPlanId);
+
+  // Best-effort local retry only. This is not a durable worker guarantee.
+  setTimeout(() => {
+    void runWeeklyMenuShoppingListControlPassSafely(mealPlanId);
+  }, SHOPPING_LIST_EXECUTOR_RECLAIM_DELAY_MS);
 }
 
 export async function markShoppingListSourceChangedByMealPlanId(mealPlanId: string) {
@@ -1340,7 +1670,7 @@ export async function markCurrentWeekShoppingListSourceChanged() {
   return markShoppingListSourceChangedByMealPlanId(mealPlan.id);
 }
 
-export async function syncShoppingListByMealPlanId(
+async function syncShoppingListByMealPlanIdLegacyCompatibility(
   mealPlanId: string,
   scope: SyncScope = { type: "full" },
   options?: {
@@ -1348,7 +1678,7 @@ export async function syncShoppingListByMealPlanId(
   },
 ) {
   const shoppingList = await ensureShoppingListByMealPlanId(mealPlanId);
-  await runSynchronousShoppingListRecompute({
+  await runLegacyCompatibilityShoppingListRecompute({
     shoppingListId: shoppingList.id,
     mealPlanId,
     scope,
@@ -1357,10 +1687,12 @@ export async function syncShoppingListByMealPlanId(
   return shoppingList.id;
 }
 
-export async function syncCurrentWeekShoppingList(scope: SyncScope = { type: "full" }) {
+async function syncCurrentWeekShoppingListLegacyCompatibility(
+  scope: SyncScope = { type: "full" },
+) {
   const mealPlan = await ensureCurrentWeekMealPlan();
   await markShoppingListSourceChangedByMealPlanId(mealPlan.id);
-  return syncShoppingListByMealPlanId(mealPlan.id, scope);
+  return syncShoppingListByMealPlanIdLegacyCompatibility(mealPlan.id, scope);
 }
 
 export async function syncShoppingListsForDish(dishId: string) {
@@ -1436,7 +1768,7 @@ export async function syncShoppingListsForDish(dishId: string) {
 
   for (const [mealPlanId, slots] of slotsByMealPlanId) {
     await markShoppingListSourceChangedByMealPlanId(mealPlanId);
-    await syncShoppingListByMealPlanId(mealPlanId, {
+    await syncShoppingListByMealPlanIdLegacyCompatibility(mealPlanId, {
       type: "slots",
       slots: uniqueSlots(slots),
     });
@@ -1513,7 +1845,9 @@ export async function fetchCurrentWeekShoppingListPageData(): Promise<CurrentWee
   if (isShoppingListStale(shoppingList) || needsCompatibilityRefresh) {
     try {
       await awaitWithTimeout(
-        syncShoppingListByMealPlanId(mealPlan.id, { type: "full" }),
+        syncShoppingListByMealPlanIdLegacyCompatibility(mealPlan.id, {
+          type: "full",
+        }),
         SHOPPING_LIST_SYNC_TIMEOUT_MS,
       );
     } catch (error) {

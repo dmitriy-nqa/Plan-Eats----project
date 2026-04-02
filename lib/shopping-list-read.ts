@@ -130,6 +130,26 @@ function getSyntheticNoProjectionStatus(): CurrentWeekShoppingListReadStatus {
   };
 }
 
+function getEffectiveFreshnessState(
+  shoppingList: ShoppingListReadHeaderRow,
+): ShoppingListFreshnessState {
+  if (shoppingList.freshness_state !== "updating") {
+    return shoppingList.freshness_state;
+  }
+
+  if (
+    shoppingList.claim_token &&
+    shoppingList.claim_expires_at &&
+    new Date(shoppingList.claim_expires_at).getTime() > Date.now()
+  ) {
+    return "updating";
+  }
+
+  return hasPublishedShoppingListBaseline(shoppingList)
+    ? "stale_pending"
+    : "no_projection";
+}
+
 function mapShoppingListReadStatus(
   shoppingList: ShoppingListReadHeaderRow | null,
 ): CurrentWeekShoppingListReadStatus {
@@ -139,7 +159,7 @@ function mapShoppingListReadStatus(
 
   return {
     hasPublishedBaseline: hasPublishedShoppingListBaseline(shoppingList),
-    freshnessState: shoppingList.freshness_state,
+    freshnessState: getEffectiveFreshnessState(shoppingList),
     publishedSourceVersion:
       getPublishedShoppingListSourceVersion(shoppingList)?.toString() ?? null,
     recomputeRequestedAt: shoppingList.recompute_requested_at,
