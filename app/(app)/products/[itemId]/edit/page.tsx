@@ -36,8 +36,10 @@ export default async function EditShoppingListItemPage({
   }
 
   const { itemId } = await params;
-  const { fetchCurrentWeekShoppingListItem } = await import("@/lib/shopping-list-crud");
-  const item = await fetchCurrentWeekShoppingListItem(itemId);
+  const { fetchCurrentWeekPublishedShoppingListItem } = await import(
+    "@/lib/shopping-list-read"
+  );
+  const item = await fetchCurrentWeekPublishedShoppingListItem(itemId);
 
   if (!item) {
     notFound();

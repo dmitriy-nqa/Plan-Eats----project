@@ -17,7 +17,7 @@ import {
 import { fetchActiveDishes } from "@/lib/dish-crud";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { getTranslation } from "@/lib/i18n/translate";
-import { fetchCurrentWeekShoppingListSummary } from "@/lib/shopping-list-crud";
+import { fetchCurrentWeekShoppingListBridgeSummary } from "@/lib/shopping-list-read";
 import { getSupabaseConfigurationError } from "@/lib/supabase/server";
 import { buildEmptyWeeklyMenuView } from "@/lib/weekly-menu";
 import { fetchCurrentWeekMenu } from "@/lib/weekly-menu-crud";
@@ -59,7 +59,7 @@ async function WeeklyMenuPageContent() {
     const [menu, dishes, shoppingSummary] = await Promise.all([
       fetchCurrentWeekMenu(locale),
       fetchActiveDishes(locale, "weeklyMenu.picker.summaryFallback"),
-      fetchCurrentWeekShoppingListSummary(),
+      fetchCurrentWeekShoppingListBridgeSummary(),
     ]);
 
     return (

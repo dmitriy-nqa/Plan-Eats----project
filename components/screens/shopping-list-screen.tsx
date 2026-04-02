@@ -31,6 +31,7 @@ import {
   getShoppingListCopy,
 } from "@/lib/shopping-list-copy";
 import { useLocale } from "@/lib/i18n/provider";
+import type { CurrentWeekShoppingListReadStatus } from "@/lib/shopping-list-read";
 
 type ShoppingListItemView = {
   id: string;
@@ -48,6 +49,7 @@ type ShoppingListSnapshotView = {
 type ShoppingListScreenProps = {
   hasMealPlan: boolean;
   snapshot: ShoppingListSnapshotView | null;
+  readStatus?: CurrentWeekShoppingListReadStatus | null;
   isSyncPending?: boolean;
   errorMessage?: string;
   toggleCheckedAction: (formData: FormData) => Promise<void>;
@@ -55,6 +57,14 @@ type ShoppingListScreenProps = {
 };
 
 type ShoppingListSectionKey = "toBuy" | "bought";
+
+type ControlStatePresentation = {
+  label: string;
+  title: string;
+  description: string;
+  topDescription: string;
+  failureReason?: string;
+};
 
 function getDefaultCollapsedSections(): Partial<
   Record<ShoppingListSectionKey, boolean>
@@ -67,6 +77,43 @@ function getDefaultCollapsedSections(): Partial<
 
 function getCollapsedSectionsStorageKey() {
   return "shopping-list:collapsed-sections";
+}
+
+function getControlStatePresentation(
+  copy: ReturnType<typeof getShoppingListCopy>,
+  readStatus: CurrentWeekShoppingListReadStatus | null,
+): ControlStatePresentation | null {
+  if (!readStatus) {
+    return null;
+  }
+
+  switch (readStatus.freshnessState) {
+    case "stale_pending":
+      return {
+        ...copy.controlStates.stalePending,
+        topDescription: copy.controlStates.stalePending.description,
+      };
+    case "updating":
+      return {
+        ...copy.controlStates.updating,
+        topDescription: copy.controlStates.updating.description,
+      };
+    case "failed_latest":
+      return {
+        ...copy.controlStates.failedLatest,
+        topDescription: copy.controlStates.failedLatest.description,
+        failureReason: readStatus.lastFailureReason
+          ? `${copy.controlStates.failedLatest.failureReasonPrefix} ${readStatus.lastFailureReason}`
+          : undefined,
+      };
+    case "no_projection":
+      return {
+        ...copy.controlStates.noProjection,
+        topDescription: copy.controlStates.noProjection.description,
+      };
+    default:
+      return null;
+  }
 }
 
 function readCollapsedSections(): Partial<Record<ShoppingListSectionKey, boolean>> {
@@ -354,6 +401,7 @@ function EmptyState({
 export function ShoppingListScreen({
   hasMealPlan,
   snapshot,
+  readStatus = null,
   isSyncPending = false,
   errorMessage,
   toggleCheckedAction,
@@ -398,6 +446,10 @@ export function ShoppingListScreen({
       : boughtItems.length > 0
         ? "text-ink"
         : "text-cocoa";
+  const controlStatePresentation = getControlStatePresentation(copy, readStatus);
+  const topDescription =
+    controlStatePresentation?.topDescription ??
+    copy.flow.productsTop.stateDescriptions[flowState];
 
   useLayoutEffect(() => {
     setCollapsedSections(readCollapsedSections());
@@ -433,7 +485,7 @@ export function ShoppingListScreen({
             <div className={topSurfaceIntroClassName}>
               <p className="text-sm font-semibold text-cocoa">{copy.weekCard.title}</p>
               <p className={topSurfaceDescriptionClassName}>
-                {copy.flow.productsTop.stateDescriptions[flowState]}
+                {topDescription}
               </p>
               <p className={topSurfaceSupportingTextClassName}>
                 {copy.flow.productsTop.supporting}
@@ -469,6 +521,27 @@ export function ShoppingListScreen({
           </div>
         </div>
       </SurfaceCard>
+
+      {controlStatePresentation ? (
+        <SurfaceCard className={stateSurfaceClassName}>
+          <div className={stateSurfaceBodyClassName}>
+            <div className={stateSurfaceBadgeClassName}>
+              {controlStatePresentation.label}
+            </div>
+            <h2 className={stateSurfaceTitleClassName}>
+              {controlStatePresentation.title}
+            </h2>
+            <p className={stateSurfaceDescriptionClassName}>
+              {controlStatePresentation.description}
+            </p>
+            {controlStatePresentation.failureReason ? (
+              <p className={`mt-4 ${inlineInfoClassName}`}>
+                {controlStatePresentation.failureReason}
+              </p>
+            ) : null}
+          </div>
+        </SurfaceCard>
+      ) : null}
 
       {errorMessage ? (
         <SurfaceCard className={errorSurfaceClassName}>

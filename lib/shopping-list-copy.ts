@@ -68,6 +68,29 @@ type ShoppingListCopy = {
     description: string;
     manualHint: string;
   };
+  controlStates: {
+    stalePending: {
+      label: string;
+      title: string;
+      description: string;
+    };
+    updating: {
+      label: string;
+      title: string;
+      description: string;
+    };
+    failedLatest: {
+      label: string;
+      title: string;
+      description: string;
+      failureReasonPrefix: string;
+    };
+    noProjection: {
+      label: string;
+      title: string;
+      description: string;
+    };
+  };
   error: {
     title: string;
     description: string;
@@ -118,21 +141,21 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
       eyebrow: "Список покупок",
       title: "Продукты",
       description:
-        "Список покупок на эту неделю, собранный из меню на неделю и готовый к спокойной ручной правке.",
+        "Список покупок на эту неделю, собранный из Weekly Menu и готовый к быстрым ручным правкам.",
     },
     weekCard: {
-      title: "Текущая неделя",
+      title: "Эта неделя",
       description: "Список покупок на эту неделю",
     },
     summary: {
-      toBuy: "{count} купить",
-      bought: "{count} куплено",
+      toBuy: "Купить: {count}",
+      bought: "Куплено: {count}",
     },
     row: {
       sourceLabel: "Источник",
-      sourceAuto: "добавлено из меню на неделю",
+      sourceAuto: "добавлено из Weekly Menu",
       sourceManual: "добавлено вручную",
-      markBought: "Отметить",
+      markBought: "Отметить как купленное",
       bought: "Куплено",
     },
     sections: {
@@ -145,8 +168,8 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
       removeItem: "Удалить",
       hideItem: "Убрать из списка",
       confirmHideItem: "Убрать эту позицию из списка покупок на эту неделю?",
-      retry: "Повторить",
-      backToWeeklyMenu: "Перейти к меню на неделю",
+      retry: "Попробовать снова",
+      backToWeeklyMenu: "К Weekly Menu",
       saveItem: "Сохранить позицию",
       saveChanges: "Сохранить изменения",
       saving: "Сохранение...",
@@ -161,9 +184,36 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
     pending: {
       title: "Список покупок обновляется",
       description:
-        "Меню на эту неделю уже есть. Список покупок еще догружает изменения, поэтому позиции могут появиться не сразу.",
+        "Меню на эту неделю уже есть. Список покупок ещё догружает изменения, поэтому позиции могут появиться не сразу.",
       manualHint:
-        "Можно немного подождать и открыть экран еще раз, либо добавить ручную позицию, если покупка нужна уже сейчас.",
+        "Можно немного подождать и открыть экран ещё раз, либо добавить ручную позицию, если покупка нужна уже сейчас.",
+    },
+    controlStates: {
+      stalePending: {
+        label: "Ждёт публикации",
+        title: "Показываем последний опубликованный список",
+        description:
+          "Недавние изменения Weekly Menu ещё ждут публикации, поэтому Products остаётся на последней committed shopping projection.",
+      },
+      updating: {
+        label: "Обновляется",
+        title: "Готовится более новая shopping projection",
+        description:
+          "Products остаётся на последней опубликованной projection, пока следующее обновление ещё в процессе.",
+      },
+      failedLatest: {
+        label: "Ошибка обновления",
+        title: "Последний refresh списка не был опубликован",
+        description:
+          "Products остаётся читаемым, потому что показывает последнюю опубликованную projection вместо того, чтобы притворяться, что новый refresh прошёл успешно.",
+        failureReasonPrefix: "Причина последней ошибки:",
+      },
+      noProjection: {
+        label: "Нет baseline",
+        title: "Опубликованной shopping projection пока нет",
+        description:
+          "Эту неделю можно читать без self-heal и bootstrap writes, но Products останется пустым, пока не появится published projection.",
+      },
     },
     error: {
       title: "Не удалось загрузить список покупок",
@@ -194,7 +244,7 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
       sourceManualEdit:
         "Эта позиция была добавлена вручную и останется отдельной от автособранного списка покупок.",
       sourceAutoEdit:
-        "Позиция пришла из меню на неделю. Здесь меняется только ее вид в списке покупок этой недели.",
+        "Позиция пришла из меню на неделю. Здесь меняется только её вид в списке покупок этой недели.",
     },
     flow: {
       bridge: {
@@ -286,6 +336,33 @@ const shoppingListCopyByLocale: Record<AppLocale, ShoppingListCopy> = {
         "This week's menu already exists. The shopping list is still pulling in recent changes, so items may appear in a moment.",
       manualHint:
         "You can wait a little and open this screen again, or add a manual item if something needs to be bought right away.",
+    },
+    controlStates: {
+      stalePending: {
+        label: "Pending update",
+        title: "Showing the last published shopping list",
+        description:
+          "Recent weekly menu changes are waiting to be published, so Products stays on the latest committed shopping projection for now.",
+      },
+      updating: {
+        label: "Updating",
+        title: "A newer shopping projection is still being prepared",
+        description:
+          "Products is staying on the last published projection while the next refresh is still in progress.",
+      },
+      failedLatest: {
+        label: "Update failed",
+        title: "The latest shopping refresh did not publish",
+        description:
+          "Products is still readable because it is showing the last published projection instead of pretending the newest refresh succeeded.",
+        failureReasonPrefix: "Latest failure:",
+      },
+      noProjection: {
+        label: "No baseline",
+        title: "No published shopping projection exists yet",
+        description:
+          "This week can be read without self-healing or bootstrap writes, but Products will stay empty until a published projection exists.",
+      },
     },
     error: {
       title: "Could not load the shopping list",

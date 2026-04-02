@@ -30,7 +30,7 @@ import {
   getShoppingFlowState,
   getShoppingListCopy,
 } from "@/lib/shopping-list-copy";
-import type { CurrentWeekShoppingListSummary } from "@/lib/shopping-list-crud";
+import type { CurrentWeekShoppingListSummary } from "@/lib/shopping-list-read";
 import {
   getWeeklyMenuSlotPrimaryItem,
   type MealType,
