@@ -4,6 +4,15 @@ import { revalidatePath } from "next/cache";
 
 import type { IngredientUnit } from "@/lib/dish-form";
 import {
+  formatSourceVersionForWrite,
+  getAuthoritativeMealPlanSourceVersion,
+  isShoppingListFreshnessState,
+  mealPlanSourceAuthorityColumn,
+  shoppingListControlPlaneSelect,
+  type MealPlanSourceAuthorityRow,
+  type ShoppingListControlPlaneRow,
+} from "@/lib/shopping-list-authority";
+import {
   buildShoppingListContributionKey,
   buildShoppingListSourceKey,
   getShoppingListNormalizedName,
@@ -61,7 +70,7 @@ type ProductAliasRow = {
   normalized_name: string;
 };
 
-type ShoppingListRow = {
+type ShoppingListLegacyFreshnessRow = {
   id: string;
   meal_plan_id: string;
   generated_at: string | null;
@@ -69,6 +78,12 @@ type ShoppingListRow = {
   last_source_change_at: string;
   needs_resync: boolean;
 };
+
+// Slice 1 compatibility note:
+// The legacy freshness fields below still drive today's synchronous recompute behavior.
+// The co-located control-plane fields are the forward-looking authority model, but they are
+// intentionally not the runtime switch for this slice.
+type ShoppingListRow = ShoppingListLegacyFreshnessRow & ShoppingListControlPlaneRow;
 
 type ShoppingListItemRow = {
   id: string;
@@ -138,6 +153,14 @@ type ShoppingListItemSnapshot = {
 };
 
 const SHOPPING_LIST_SYNC_TIMEOUT_MS = 5000;
+const SHOPPING_LIST_LEGACY_FRESHNESS_SELECT =
+  "generated_at, last_synced_at, last_source_change_at, needs_resync";
+const SHOPPING_LIST_SELECT = [
+  "id",
+  "meal_plan_id",
+  SHOPPING_LIST_LEGACY_FRESHNESS_SELECT,
+  shoppingListControlPlaneSelect,
+].join(", ");
 
 export type CurrentWeekShoppingListSnapshot = {
   shoppingListId: string;
@@ -191,6 +214,25 @@ type ProjectedAutoItemRow = {
   source_key: string;
 };
 
+type CandidateBaseProjection = {
+  mealPlanId: string;
+  scope: SyncScope;
+  nextContributionDrafts: SlotContributionDraft[];
+};
+
+type ContinuityOverlayAssemblyInput = {
+  shoppingListId: string;
+  sourceKeys: string[];
+  fallbackContributionDrafts?: SlotContributionDraft[];
+  replacementContributionKeys?: string[];
+};
+
+type VisibleAutoMaterializationPlan = {
+  shoppingListId: string;
+  upsertRows: ProjectedAutoItemRow[];
+  deleteSourceKeys: string[];
+};
+
 function parseQuantity(value: number | string | null | undefined) {
   const numericValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numericValue) ? numericValue : 0;
@@ -220,6 +262,22 @@ function uniqueSlots(slots: ShoppingListSlotCoordinate[]) {
   });
 }
 
+function selectSlotsForSyncScope(
+  slots: Awaited<ReturnType<typeof fetchMealPlanSlots>>,
+  scope: SyncScope,
+) {
+  if (scope.type === "full") {
+    return slots;
+  }
+
+  return slots.filter((slot) =>
+    scope.slots.some(
+      (targetSlot) =>
+        targetSlot.dayIndex === slot.dayIndex && targetSlot.mealType === slot.mealType,
+    ),
+  );
+}
+
 function buildContributionSlotScopeFilter(slots: ShoppingListSlotCoordinate[]) {
   const uniqueScopedSlots = uniqueSlots(slots);
 
@@ -233,6 +291,7 @@ function buildContributionSlotScopeFilter(slots: ShoppingListSlotCoordinate[]) {
 }
 
 function isShoppingListStale(list: ShoppingListRow | null) {
+  // Legacy path only: later slices will cut reads over to the authority/control model.
   if (!list) {
     return true;
   }
@@ -363,13 +422,41 @@ async function ensureCurrentWeekMealPlan() {
   return retriedMealPlan as MealPlanRow;
 }
 
+async function fetchMealPlanSourceAuthority(mealPlanId: string) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("meal_plans")
+    .select(mealPlanSourceAuthorityColumn)
+    .eq("id", mealPlanId)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as MealPlanSourceAuthorityRow;
+}
+
+async function bumpMealPlanSourceVersion(mealPlanId: string) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("bump_meal_plan_source_version", {
+    target_meal_plan_id: mealPlanId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return getAuthoritativeMealPlanSourceVersion({
+    source_version: data as string | number | bigint,
+  });
+}
+
 async function fetchShoppingListByMealPlanId(mealPlanId: string) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
     .from("shopping_lists")
-    .select(
-      "id, meal_plan_id, generated_at, last_synced_at, last_source_change_at, needs_resync",
-    )
+    .select(SHOPPING_LIST_SELECT)
     .eq("meal_plan_id", mealPlanId)
     .maybeSingle();
 
@@ -377,7 +464,34 @@ async function fetchShoppingListByMealPlanId(mealPlanId: string) {
     throw error;
   }
 
-  return (data ?? null) as ShoppingListRow | null;
+  const shoppingList = (data ?? null) as unknown as ShoppingListRow | null;
+
+  if (shoppingList && !isShoppingListFreshnessState(shoppingList.freshness_state)) {
+    throw new Error(`Invalid shopping list freshness state: ${shoppingList.freshness_state}`);
+  }
+
+  return shoppingList;
+}
+
+async function fetchShoppingListById(shoppingListId: string) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("shopping_lists")
+    .select(SHOPPING_LIST_SELECT)
+    .eq("id", shoppingListId)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  const shoppingList = data as unknown as ShoppingListRow;
+
+  if (!isShoppingListFreshnessState(shoppingList.freshness_state)) {
+    throw new Error(`Invalid shopping list freshness state: ${shoppingList.freshness_state}`);
+  }
+
+  return shoppingList;
 }
 
 async function ensureShoppingListByMealPlanId(mealPlanId: string) {
@@ -395,13 +509,11 @@ async function ensureShoppingListByMealPlanId(mealPlanId: string) {
       last_source_change_at: new Date().toISOString(),
       needs_resync: true,
     })
-    .select(
-      "id, meal_plan_id, generated_at, last_synced_at, last_source_change_at, needs_resync",
-    )
+    .select(SHOPPING_LIST_SELECT)
     .single();
 
   if (!createError) {
-    return createdList as ShoppingListRow;
+    return createdList as unknown as ShoppingListRow;
   }
 
   if (createError.code !== "23505") {
@@ -728,6 +840,36 @@ function buildSlotContributionDrafts(args: {
   return [...groupedContributions.values()];
 }
 
+async function computeCandidateBaseProjection(args: {
+  mealPlanId: string;
+  scope: SyncScope;
+  prefetchedSlots?: Awaited<ReturnType<typeof fetchMealPlanSlots>>;
+}): Promise<CandidateBaseProjection> {
+  const [slots, productMaps] = await Promise.all([
+    args.prefetchedSlots
+      ? Promise.resolve(args.prefetchedSlots)
+      : fetchMealPlanSlots(args.mealPlanId),
+    fetchProductResolutionMaps(),
+  ]);
+  const targetSlots = selectSlotsForSyncScope(slots, args.scope);
+  const targetDishIds = uniqueStrings(targetSlots.map((slot) => slot.dishId));
+  const dishIngredientsByDishId = await fetchDishIngredientsByDishIds(targetDishIds);
+  const nextContributionDrafts = targetSlots.flatMap((slot) =>
+    buildSlotContributionDrafts({
+      mealPlanId: args.mealPlanId,
+      slot,
+      dishIngredients: dishIngredientsByDishId.get(slot.dishId) ?? [],
+      productMaps,
+    }),
+  );
+
+  return {
+    mealPlanId: args.mealPlanId,
+    scope: args.scope,
+    nextContributionDrafts,
+  };
+}
+
 async function fetchContributionRowsForShoppingList(
   shoppingListId: string,
   options?: {
@@ -847,16 +989,17 @@ function areProjectedAutoRowsSemanticallyEqual(
   );
 }
 
-async function materializeProjectionRows(args: {
-  shoppingListId: string;
-  sourceKeys: string[];
-  fallbackContributionDrafts?: SlotContributionDraft[];
-  replacementContributionKeys?: string[];
-}) {
+async function assembleContinuityOverlayPlan(
+  args: ContinuityOverlayAssemblyInput,
+): Promise<VisibleAutoMaterializationPlan> {
   const sourceKeys = uniqueStrings(args.sourceKeys);
 
   if (sourceKeys.length === 0) {
-    return;
+    return {
+      shoppingListId: args.shoppingListId,
+      upsertRows: [],
+      deleteSourceKeys: [],
+    };
   }
 
   const [contributions, adjustments, existingAutoItems] = await Promise.all([
@@ -982,24 +1125,32 @@ async function materializeProjectionRows(args: {
     upsertRows.push(projectedRow);
   }
 
+  return {
+    shoppingListId: args.shoppingListId,
+    upsertRows,
+    deleteSourceKeys,
+  };
+}
+
+async function materializeVisibleAutoProjectionRows(plan: VisibleAutoMaterializationPlan) {
   const supabase = getSupabaseServerClient();
 
-  if (deleteSourceKeys.length > 0) {
+  if (plan.deleteSourceKeys.length > 0) {
     const { error: deleteError } = await supabase
       .from("shopping_list_items")
       .delete()
-      .eq("shopping_list_id", args.shoppingListId)
+      .eq("shopping_list_id", plan.shoppingListId)
       .eq("source_type", "auto")
-      .in("source_key", deleteSourceKeys);
+      .in("source_key", plan.deleteSourceKeys);
 
     if (deleteError) {
       throw deleteError;
     }
   }
 
-  if (upsertRows.length > 0) {
+  if (plan.upsertRows.length > 0) {
     const { error: upsertError } = await supabase.from("shopping_list_items").upsert(
-      upsertRows,
+      plan.upsertRows,
       {
         onConflict: "shopping_list_id,source_key",
       },
@@ -1011,25 +1162,28 @@ async function materializeProjectionRows(args: {
   }
 }
 
-async function upsertContributionRows(args: {
+// Compatibility seam only:
+// This persists the candidate base into legacy contribution storage so the synchronous
+// path can still assemble continuity overlays from existing contribution rows.
+// It is not the semantic publish step for visible auto rows; that remains bounded to
+// materializeVisibleAutoProjectionRows(), which is where future guarded publish will attach.
+async function persistCandidateBaseProjection(args: {
   shoppingListId: string;
-  mealPlanId: string;
-  scope: SyncScope;
-  nextContributionDrafts: SlotContributionDraft[];
-}) {
+  candidateBaseProjection: CandidateBaseProjection;
+}): Promise<ContinuityOverlayAssemblyInput> {
   const supabase = getSupabaseServerClient();
   const scopedExistingRows = await fetchContributionRowsForShoppingList(args.shoppingListId, {
-    scope: args.scope,
+    scope: args.candidateBaseProjection.scope,
   });
   const nextContributionKeys = new Set(
-    args.nextContributionDrafts.map((draft) => draft.contributionKey),
+    args.candidateBaseProjection.nextContributionDrafts.map((draft) => draft.contributionKey),
   );
   const obsoleteContributionKeys = scopedExistingRows
     .map((row) => row.contribution_key)
     .filter((key) => !nextContributionKeys.has(key));
   const affectedSourceKeys = uniqueStrings([
     ...scopedExistingRows.map((row) => row.source_key),
-    ...args.nextContributionDrafts.map((draft) => draft.sourceKey),
+    ...args.candidateBaseProjection.nextContributionDrafts.map((draft) => draft.sourceKey),
   ]);
 
   if (obsoleteContributionKeys.length > 0) {
@@ -1044,13 +1198,13 @@ async function upsertContributionRows(args: {
     }
   }
 
-  if (args.nextContributionDrafts.length > 0) {
+  if (args.candidateBaseProjection.nextContributionDrafts.length > 0) {
     const { error: upsertError } = await supabase
       .from("shopping_list_item_contributions")
       .upsert(
-        args.nextContributionDrafts.map((draft) => ({
+        args.candidateBaseProjection.nextContributionDrafts.map((draft) => ({
           shopping_list_id: args.shoppingListId,
-          meal_plan_id: args.mealPlanId,
+          meal_plan_id: args.candidateBaseProjection.mealPlanId,
           contribution_key: draft.contributionKey,
           source_key: draft.sourceKey,
           day_index: draft.dayIndex,
@@ -1072,19 +1226,21 @@ async function upsertContributionRows(args: {
     }
   }
 
-  await materializeProjectionRows({
+  return {
     shoppingListId: args.shoppingListId,
     sourceKeys: affectedSourceKeys,
-    fallbackContributionDrafts: args.nextContributionDrafts,
+    fallbackContributionDrafts: args.candidateBaseProjection.nextContributionDrafts,
     replacementContributionKeys: uniqueStrings([
       ...scopedExistingRows.map((row) => row.contribution_key),
-      ...args.nextContributionDrafts.map((draft) => draft.contributionKey),
+      ...args.candidateBaseProjection.nextContributionDrafts.map((draft) => draft.contributionKey),
     ]),
-  });
+  };
 }
 
-async function markShoppingListSynced(shoppingListId: string) {
+async function advanceShoppingListControlStateAfterSuccessfulSync(shoppingListId: string) {
   const supabase = getSupabaseServerClient();
+  const shoppingList = await fetchShoppingListById(shoppingListId);
+  const mealPlanSourceAuthority = await fetchMealPlanSourceAuthority(shoppingList.meal_plan_id);
   const now = new Date().toISOString();
   const { error } = await supabase
     .from("shopping_lists")
@@ -1092,6 +1248,17 @@ async function markShoppingListSynced(shoppingListId: string) {
       generated_at: now,
       last_synced_at: now,
       needs_resync: false,
+      published_source_version: formatSourceVersionForWrite(
+        getAuthoritativeMealPlanSourceVersion(mealPlanSourceAuthority),
+      ),
+      freshness_state: "fresh",
+      recompute_requested_at: null,
+      claim_token: null,
+      claim_target_version: null,
+      claim_expires_at: null,
+      last_failure_at: null,
+      last_failure_source_version: null,
+      last_failure_reason: null,
     })
     .eq("id", shoppingListId);
 
@@ -1100,9 +1267,40 @@ async function markShoppingListSynced(shoppingListId: string) {
   }
 }
 
+async function runSynchronousShoppingListRecompute(args: {
+  shoppingListId: string;
+  mealPlanId: string;
+  scope: SyncScope;
+  prefetchedSlots?: Awaited<ReturnType<typeof fetchMealPlanSlots>>;
+}) {
+  // Slice 2 pipeline:
+  // 1. compute candidate base projection from current meal-plan source state
+  // 2. assemble continuity overlays on top of that candidate base
+  // 3. materialize only the visible auto projection rows
+  // 4. advance control-state fields after a successful synchronous publish
+  const candidateBaseProjection = await computeCandidateBaseProjection({
+    mealPlanId: args.mealPlanId,
+    scope: args.scope,
+    prefetchedSlots: args.prefetchedSlots,
+  });
+  // Compatibility step for the still-synchronous path: we continue persisting contribution rows
+  // before visible auto materialization so the legacy partial-sync surface remains intact.
+  const continuityOverlayInput = await persistCandidateBaseProjection({
+    shoppingListId: args.shoppingListId,
+    candidateBaseProjection,
+  });
+  const visibleAutoMaterializationPlan = await assembleContinuityOverlayPlan(
+    continuityOverlayInput,
+  );
+
+  await materializeVisibleAutoProjectionRows(visibleAutoMaterializationPlan);
+  await advanceShoppingListControlStateAfterSuccessfulSync(args.shoppingListId);
+}
+
 export async function markShoppingListSourceChangedByMealPlanId(mealPlanId: string) {
   const supabase = getSupabaseServerClient();
   const shoppingList = await ensureShoppingListByMealPlanId(mealPlanId);
+  await bumpMealPlanSourceVersion(mealPlanId);
   const now = new Date().toISOString();
 
   const { error } = await supabase
@@ -1110,6 +1308,11 @@ export async function markShoppingListSourceChangedByMealPlanId(mealPlanId: stri
     .update({
       last_source_change_at: now,
       needs_resync: true,
+      freshness_state: "stale_pending",
+      recompute_requested_at: now,
+      claim_token: null,
+      claim_target_version: null,
+      claim_expires_at: null,
     })
     .eq("id", shoppingList.id);
 
@@ -1138,38 +1341,12 @@ export async function syncShoppingListByMealPlanId(
   },
 ) {
   const shoppingList = await ensureShoppingListByMealPlanId(mealPlanId);
-  const [slots, productMaps] = await Promise.all([
-    options?.prefetchedSlots
-      ? Promise.resolve(options.prefetchedSlots)
-      : fetchMealPlanSlots(mealPlanId),
-    fetchProductResolutionMaps(),
-  ]);
-  const targetSlots =
-    scope.type === "full"
-      ? slots
-      : slots.filter((slot) =>
-          scope.slots.some(
-            (targetSlot) =>
-              targetSlot.dayIndex === slot.dayIndex && targetSlot.mealType === slot.mealType,
-          ),
-        );
-  const targetDishIds = uniqueStrings(targetSlots.map((slot) => slot.dishId));
-  const dishIngredientsByDishId = await fetchDishIngredientsByDishIds(targetDishIds);
-  const nextContributionDrafts = targetSlots.flatMap((slot) =>
-    buildSlotContributionDrafts({
-      mealPlanId,
-      slot,
-      dishIngredients: dishIngredientsByDishId.get(slot.dishId) ?? [],
-      productMaps,
-    }),
-  );
-  await upsertContributionRows({
+  await runSynchronousShoppingListRecompute({
     shoppingListId: shoppingList.id,
     mealPlanId,
     scope,
-    nextContributionDrafts,
+    prefetchedSlots: options?.prefetchedSlots,
   });
-  await markShoppingListSynced(shoppingList.id);
   return shoppingList.id;
 }
 
@@ -1594,11 +1771,13 @@ export async function upsertShoppingListItemAdjustment(input: {
     throw error;
   }
 
-  await materializeProjectionRows({
+  const visibleAutoMaterializationPlan = await assembleContinuityOverlayPlan({
     shoppingListId: input.shoppingListId,
     sourceKeys: [input.sourceKey],
   });
-  await markShoppingListSynced(input.shoppingListId);
+
+  await materializeVisibleAutoProjectionRows(visibleAutoMaterializationPlan);
+  await advanceShoppingListControlStateAfterSuccessfulSync(input.shoppingListId);
   revalidatePath("/products");
 }
 
