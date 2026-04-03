@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 
 import {
   backActionClassName,
@@ -1799,7 +1798,6 @@ export function WeeklyMenuScreen({
 }) {
   const t = useT();
   const { locale } = useLocale();
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [sheetState, setSheetState] = useState<{
     dayIndex: number;
@@ -1927,7 +1925,6 @@ export function WeeklyMenuScreen({
 
       if (result.status === "success") {
         onSuccess?.(result);
-        router.refresh();
         return;
       }
 
