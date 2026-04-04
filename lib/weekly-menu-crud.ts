@@ -246,6 +246,7 @@ async function createCurrentWeekSlotRow(args: {
       dayIndex: slot.day_index,
       mealType: assertMealType(slot.meal_type),
       dishId: slot.dish_id,
+      wasCreated: true,
     };
   }
 
@@ -263,7 +264,10 @@ async function createCurrentWeekSlotRow(args: {
     throw error;
   }
 
-  return existingSlot;
+  return {
+    ...existingSlot,
+    wasCreated: false,
+  };
 }
 
 async function fetchSlotItemRowsBySlotIds(slotIds: string[]) {
@@ -650,24 +654,18 @@ export async function addDishToCurrentWeekSlot(args: {
 
   const supabase = getSupabaseServerClient();
   const { familyId, mealPlan } = await ensureCurrentWeekMealPlan();
-  const existingSlot = await fetchCurrentWeekSlotRow({
+  const resolvedSlot = await createCurrentWeekSlotRow({
+    familyId,
     mealPlanId: mealPlan.id,
     dayIndex: args.dayIndex,
     mealType: normalizedMealType,
+    dishId: args.dishId,
   });
 
-  if (!existingSlot) {
-    const createdSlot = await createCurrentWeekSlotRow({
-      familyId,
-      mealPlanId: mealPlan.id,
-      dayIndex: args.dayIndex,
-      mealType: normalizedMealType,
-      dishId: args.dishId,
-    });
-
+  if (resolvedSlot.wasCreated) {
     const { error } = await supabase.from("meal_plan_slot_items").insert({
       family_id: familyId,
-      slot_id: createdSlot.id,
+      slot_id: resolvedSlot.id,
       dish_id: args.dishId,
       sort_order: 0,
     });
@@ -686,6 +684,7 @@ export async function addDishToCurrentWeekSlot(args: {
     return;
   }
 
+  const existingSlot = resolvedSlot;
   const persistedItems = await ensurePersistedSlotItemsForSlot({
     familyId,
     slot: existingSlot,
