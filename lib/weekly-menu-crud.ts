@@ -55,6 +55,101 @@ type DishIngredientRow = {
   sort_order: number | null;
 };
 
+type WeeklyMenuMutationTraceStage = {
+  name: string;
+  durationMs: number;
+};
+
+function isWeeklyMenuPostTraceEnabled() {
+  return process.env.PLAN_EAT_TRACE_WEEKLY_MENU_POST === "1";
+}
+
+function roundTraceDuration(durationMs: number) {
+  return Math.round(durationMs * 100) / 100;
+}
+
+function serializeTraceError(error: unknown) {
+  if (error instanceof WeeklyMenuMutationError) {
+    return {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+
+  return {
+    name: "UnknownError",
+    message: "Unknown weekly menu mutation error",
+  };
+}
+
+function createWeeklyMenuMutationTrace(
+  mutation: string,
+  context: Record<string, unknown>,
+) {
+  const enabled = isWeeklyMenuPostTraceEnabled();
+  const startedAt = enabled ? performance.now() : 0;
+  const stages: WeeklyMenuMutationTraceStage[] = [];
+  let flushed = false;
+
+  async function step<T>(name: string, run: () => Promise<T> | T): Promise<T> {
+    if (!enabled) {
+      return run();
+    }
+
+    const stageStartedAt = performance.now();
+
+    try {
+      return await run();
+    } finally {
+      stages.push({
+        name,
+        durationMs: roundTraceDuration(performance.now() - stageStartedAt),
+      });
+    }
+  }
+
+  function flush(status: "success" | "error", details?: Record<string, unknown>) {
+    if (!enabled || flushed) {
+      return;
+    }
+
+    flushed = true;
+
+    console.log(
+      `[weekly-menu-post-trace] ${JSON.stringify({
+        mutation,
+        status,
+        totalDurationMs: roundTraceDuration(performance.now() - startedAt),
+        stageCount: stages.length,
+        context,
+        stages,
+        ...(details ? { details } : {}),
+      })}`,
+    );
+  }
+
+  return {
+    step,
+    success(details?: Record<string, unknown>) {
+      flush("success", details);
+    },
+    failure(error: unknown, details?: Record<string, unknown>) {
+      flush("error", {
+        ...(details ?? {}),
+        error: serializeTraceError(error),
+      });
+    },
+  };
+}
+
 function assertDayIndex(dayIndex: number) {
   if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) {
     throw new Error(`Invalid day index: ${dayIndex}`);
@@ -645,79 +740,120 @@ export async function addDishToCurrentWeekSlot(args: {
 }) {
   assertDayIndex(args.dayIndex);
   const normalizedMealType = assertMealType(args.mealType);
-
-  if (!args.dishId) {
-    throw new Error("Missing dish id for slot assignment");
-  }
-
-  await assertActiveDishAvailable(args.dishId);
-
-  const supabase = getSupabaseServerClient();
-  const { familyId, mealPlan } = await ensureCurrentWeekMealPlan();
-  const resolvedSlot = await createCurrentWeekSlotRow({
-    familyId,
-    mealPlanId: mealPlan.id,
+  const trace = createWeeklyMenuMutationTrace("addDishToCurrentWeekSlot", {
     dayIndex: args.dayIndex,
     mealType: normalizedMealType,
-    dishId: args.dishId,
   });
+  let traceError: unknown;
+  const traceDetails: Record<string, unknown> = {
+    dishId: args.dishId,
+  };
 
-  if (resolvedSlot.wasCreated) {
-    const { error } = await supabase.from("meal_plan_slot_items").insert({
-      family_id: familyId,
-      slot_id: resolvedSlot.id,
-      dish_id: args.dishId,
-      sort_order: 0,
-    });
+  try {
+    if (!args.dishId) {
+      throw new Error("Missing dish id for slot assignment");
+    }
+
+    await trace.step("assertActiveDishAvailable", () =>
+      assertActiveDishAvailable(args.dishId),
+    );
+
+    const supabase = getSupabaseServerClient();
+    const { familyId, mealPlan } = await trace.step("ensureCurrentWeekMealPlan", () =>
+      ensureCurrentWeekMealPlan(),
+    );
+    const resolvedSlot = await trace.step("createCurrentWeekSlotRow", () =>
+      createCurrentWeekSlotRow({
+        familyId,
+        mealPlanId: mealPlan.id,
+        dayIndex: args.dayIndex,
+        mealType: normalizedMealType,
+        dishId: args.dishId,
+      }),
+    );
+    traceDetails.slotWasCreated = resolvedSlot.wasCreated;
+
+    if (resolvedSlot.wasCreated) {
+      const { error } = await trace.step("insertInitialSlotItem", () =>
+        supabase.from("meal_plan_slot_items").insert({
+          family_id: familyId,
+          slot_id: resolvedSlot.id,
+          dish_id: args.dishId,
+          sort_order: 0,
+        }),
+      );
+
+      if (error) {
+        if (isMissingSlotItemStorageError(error)) {
+          traceDetails.slotItemStorageMissing = true;
+          await trace.step("recordShoppingListSourceChange", () =>
+            recordShoppingListSourceChange(mealPlan.id),
+          );
+          return;
+        }
+
+        throw error;
+      }
+
+      await trace.step("recordShoppingListSourceChange", () =>
+        recordShoppingListSourceChange(mealPlan.id),
+      );
+
+      return;
+    }
+
+    const existingSlot = resolvedSlot;
+    const persistedItems = await trace.step("ensurePersistedSlotItemsForSlot", () =>
+      ensurePersistedSlotItemsForSlot({
+        familyId,
+        slot: existingSlot,
+      }),
+    );
+
+    if (!persistedItems) {
+      throw new Error("Slot item storage is not available yet.");
+    }
+
+    if (persistedItems.some((item) => item.dish_id === args.dishId)) {
+      throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
+    }
+
+    const nextSortOrder =
+      persistedItems.length === 0
+        ? 0
+        : Math.max(...persistedItems.map((item) => item.sort_order)) + 1;
+    traceDetails.nextSortOrder = nextSortOrder;
+
+    const { error } = await trace.step("insertSlotItem", () =>
+      supabase.from("meal_plan_slot_items").insert({
+        family_id: familyId,
+        slot_id: existingSlot.id,
+        dish_id: args.dishId,
+        sort_order: nextSortOrder,
+      }),
+    );
 
     if (error) {
-      if (isMissingSlotItemStorageError(error)) {
-        await recordShoppingListSourceChange(mealPlan.id);
-        return;
+      if (error.code === "23505") {
+        throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
       }
 
       throw error;
     }
 
-    await recordShoppingListSourceChange(mealPlan.id);
-
-    return;
-  }
-
-  const existingSlot = resolvedSlot;
-  const persistedItems = await ensurePersistedSlotItemsForSlot({
-    familyId,
-    slot: existingSlot,
-  });
-
-  if (!persistedItems) {
-    throw new Error("Slot item storage is not available yet.");
-  }
-
-  if (persistedItems.some((item) => item.dish_id === args.dishId)) {
-    throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
-  }
-
-  const nextSortOrder =
-    persistedItems.length === 0
-      ? 0
-      : Math.max(...persistedItems.map((item) => item.sort_order)) + 1;
-  const { error } = await supabase.from("meal_plan_slot_items").insert({
-    family_id: familyId,
-    slot_id: existingSlot.id,
-    dish_id: args.dishId,
-    sort_order: nextSortOrder,
-  });
-
-  if (error) {
-    if (error.code === "23505") {
-      throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
-    }
-
+    await trace.step("recordShoppingListSourceChange", () =>
+      recordShoppingListSourceChange(mealPlan.id),
+    );
+  } catch (error) {
+    traceError = error;
     throw error;
+  } finally {
+    if (traceError) {
+      trace.failure(traceError, traceDetails);
+    } else {
+      trace.success(traceDetails);
+    }
   }
-
-  await recordShoppingListSourceChange(mealPlan.id);
 }
 
 export async function replaceCurrentWeekSlotItemDish(args: {
@@ -728,90 +864,133 @@ export async function replaceCurrentWeekSlotItemDish(args: {
 }) {
   assertDayIndex(args.dayIndex);
   const normalizedMealType = assertMealType(args.mealType);
-
-  if (!args.slotItemId || !args.dishId) {
-    throw new Error("Missing slot item data for replacement");
-  }
-
-  await assertActiveDishAvailable(args.dishId);
-
-  const supabase = getSupabaseServerClient();
-  const { familyId, mealPlan } = await ensureCurrentWeekMealPlan();
-  const slot = await fetchCurrentWeekSlotRow({
-    mealPlanId: mealPlan.id,
+  const trace = createWeeklyMenuMutationTrace("replaceCurrentWeekSlotItemDish", {
     dayIndex: args.dayIndex,
     mealType: normalizedMealType,
+    slotItemId: args.slotItemId,
   });
+  let traceError: unknown;
+  const traceDetails: Record<string, unknown> = {
+    dishId: args.dishId,
+  };
 
-  if (!slot) {
-    throw new WeeklyMenuMutationError("slot_not_found");
-  }
+  try {
+    if (!args.slotItemId || !args.dishId) {
+      throw new Error("Missing slot item data for replacement");
+    }
 
-  const persistedItems = await ensurePersistedSlotItemsForSlot({
-    familyId,
-    slot,
-  });
+    await trace.step("assertActiveDishAvailable", () =>
+      assertActiveDishAvailable(args.dishId),
+    );
 
-  if (!persistedItems) {
-    if (slot.dishId === args.dishId) {
+    const supabase = getSupabaseServerClient();
+    const { familyId, mealPlan } = await trace.step("ensureCurrentWeekMealPlan", () =>
+      ensureCurrentWeekMealPlan(),
+    );
+    const slot = await trace.step("fetchCurrentWeekSlotRow", () =>
+      fetchCurrentWeekSlotRow({
+        mealPlanId: mealPlan.id,
+        dayIndex: args.dayIndex,
+        mealType: normalizedMealType,
+      }),
+    );
+
+    if (!slot) {
+      throw new WeeklyMenuMutationError("slot_not_found");
+    }
+
+    const persistedItems = await trace.step("ensurePersistedSlotItemsForSlot", () =>
+      ensurePersistedSlotItemsForSlot({
+        familyId,
+        slot,
+      }),
+    );
+
+    if (!persistedItems) {
+      traceDetails.legacyFallback = true;
+
+      if (slot.dishId === args.dishId) {
+        traceDetails.noop = true;
+        return;
+      }
+
+      await trace.step("upsertLegacyCurrentWeekSlotDish", () =>
+        upsertLegacyCurrentWeekSlotDish({
+          familyId,
+          mealPlanId: mealPlan.id,
+          dayIndex: args.dayIndex,
+          mealType: normalizedMealType,
+          dishId: args.dishId,
+        }),
+      );
+      await trace.step("recordShoppingListSourceChange", () =>
+        recordShoppingListSourceChange(mealPlan.id),
+      );
       return;
     }
 
-    await upsertLegacyCurrentWeekSlotDish({
-      familyId,
-      mealPlanId: mealPlan.id,
-      dayIndex: args.dayIndex,
-      mealType: normalizedMealType,
-      dishId: args.dishId,
-    });
-    await recordShoppingListSourceChange(mealPlan.id);
-    return;
-  }
+    const slotItem = persistedItems.find((item) => item.id === args.slotItemId);
 
-  const slotItem = persistedItems.find((item) => item.id === args.slotItemId);
+    if (!slotItem) {
+      throw new WeeklyMenuMutationError("slot_item_not_found");
+    }
 
-  if (!slotItem) {
-    throw new WeeklyMenuMutationError("slot_item_not_found");
-  }
+    if (slotItem.dish_id === args.dishId) {
+      traceDetails.noop = true;
+      return;
+    }
 
-  if (slotItem.dish_id === args.dishId) {
-    return;
-  }
-
-  if (
-    persistedItems.some(
-      (item) => item.id !== args.slotItemId && item.dish_id === args.dishId,
-    )
-  ) {
-    throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
-  }
-
-  const { error } = await supabase
-    .from("meal_plan_slot_items")
-    .update({
-      dish_id: args.dishId,
-    })
-    .eq("id", args.slotItemId)
-    .eq("slot_id", slot.id);
-
-  if (error) {
-    if (error.code === "23505") {
+    if (
+      persistedItems.some(
+        (item) => item.id !== args.slotItemId && item.dish_id === args.dishId,
+      )
+    ) {
       throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
     }
 
+    const { error } = await trace.step("updateSlotItemDish", () =>
+      supabase
+        .from("meal_plan_slot_items")
+        .update({
+          dish_id: args.dishId,
+        })
+        .eq("id", args.slotItemId)
+        .eq("slot_id", slot.id),
+    );
+
+    if (error) {
+      if (error.code === "23505") {
+        throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
+      }
+
+      throw error;
+    }
+
+    const primaryItem = sortSlotItemRows(persistedItems)[0];
+    traceDetails.replacedPrimaryItem = primaryItem?.id === args.slotItemId;
+
+    if (primaryItem?.id === args.slotItemId) {
+      await trace.step("updateSlotPrimaryDish", () =>
+        updateSlotPrimaryDish({
+          slotId: slot.id,
+          dishId: args.dishId,
+        }),
+      );
+    }
+
+    await trace.step("recordShoppingListSourceChange", () =>
+      recordShoppingListSourceChange(mealPlan.id),
+    );
+  } catch (error) {
+    traceError = error;
     throw error;
+  } finally {
+    if (traceError) {
+      trace.failure(traceError, traceDetails);
+    } else {
+      trace.success(traceDetails);
+    }
   }
-
-  const primaryItem = sortSlotItemRows(persistedItems)[0];
-
-  if (primaryItem?.id === args.slotItemId) {
-    await updateSlotPrimaryDish({
-      slotId: slot.id,
-      dishId: args.dishId,
-    });
-  }
-
-  await recordShoppingListSourceChange(mealPlan.id);
 }
 
 export async function removeCurrentWeekSlotItem(args: {
@@ -821,90 +1000,128 @@ export async function removeCurrentWeekSlotItem(args: {
 }) {
   assertDayIndex(args.dayIndex);
   const normalizedMealType = assertMealType(args.mealType);
-
-  if (!args.slotItemId) {
-    throw new Error("Missing slot item id for removal");
-  }
-
-  const supabase = getSupabaseServerClient();
-  const { familyId, mealPlan } = await fetchCurrentWeekMealPlan();
-
-  if (!mealPlan) {
-    return {
-      slotIsEmpty: true,
-    };
-  }
-
-  const slot = await fetchCurrentWeekSlotRow({
-    mealPlanId: mealPlan.id,
+  const trace = createWeeklyMenuMutationTrace("removeCurrentWeekSlotItem", {
     dayIndex: args.dayIndex,
     mealType: normalizedMealType,
+    slotItemId: args.slotItemId,
   });
+  let traceError: unknown;
+  const traceDetails: Record<string, unknown> = {};
 
-  if (!slot) {
-    throw new WeeklyMenuMutationError("slot_not_found");
-  }
+  try {
+    if (!args.slotItemId) {
+      throw new Error("Missing slot item id for removal");
+    }
 
-  const persistedItems = await ensurePersistedSlotItemsForSlot({
-    familyId,
-    slot,
-  });
+    const supabase = getSupabaseServerClient();
+    const { familyId, mealPlan } = await trace.step("fetchCurrentWeekMealPlan", () =>
+      fetchCurrentWeekMealPlan(),
+    );
 
-  if (!persistedItems) {
-    await clearCurrentWeekSlot({
-      dayIndex: args.dayIndex,
-      mealType: normalizedMealType,
-    });
+    if (!mealPlan) {
+      traceDetails.slotIsEmpty = true;
+      return {
+        slotIsEmpty: true,
+      };
+    }
+
+    const slot = await trace.step("fetchCurrentWeekSlotRow", () =>
+      fetchCurrentWeekSlotRow({
+        mealPlanId: mealPlan.id,
+        dayIndex: args.dayIndex,
+        mealType: normalizedMealType,
+      }),
+    );
+
+    if (!slot) {
+      throw new WeeklyMenuMutationError("slot_not_found");
+    }
+
+    const persistedItems = await trace.step("ensurePersistedSlotItemsForSlot", () =>
+      ensurePersistedSlotItemsForSlot({
+        familyId,
+        slot,
+      }),
+    );
+
+    if (!persistedItems) {
+      traceDetails.legacyFallback = true;
+      await trace.step("clearCurrentWeekSlot", () =>
+        clearCurrentWeekSlot({
+          dayIndex: args.dayIndex,
+          mealType: normalizedMealType,
+        }),
+      );
+      traceDetails.slotIsEmpty = true;
+      return {
+        slotIsEmpty: true,
+      };
+    }
+
+    const slotItem = persistedItems.find((item) => item.id === args.slotItemId);
+
+    if (!slotItem) {
+      throw new WeeklyMenuMutationError("slot_item_not_found");
+    }
+
+    const remainingItems = sortSlotItemRows(
+      persistedItems.filter((item) => item.id !== args.slotItemId),
+    );
+    traceDetails.slotIsEmpty = remainingItems.length === 0;
+
+    const { error: deleteItemError } = await trace.step("deleteSlotItem", () =>
+      supabase
+        .from("meal_plan_slot_items")
+        .delete()
+        .eq("id", args.slotItemId)
+        .eq("slot_id", slot.id),
+    );
+
+    if (deleteItemError) {
+      throw deleteItemError;
+    }
+
+    if (remainingItems.length === 0) {
+      const { error: deleteSlotError } = await trace.step("deleteSlotRow", () =>
+        supabase.from("meal_plan_slots").delete().eq("id", slot.id),
+      );
+
+      if (deleteSlotError) {
+        throw deleteSlotError;
+      }
+    } else {
+      const primaryItem = remainingItems[0];
+      traceDetails.updatedPrimaryDish = primaryItem
+        ? primaryItem.dish_id !== slot.dishId
+        : false;
+
+      if (primaryItem && primaryItem.dish_id !== slot.dishId) {
+        await trace.step("updateSlotPrimaryDish", () =>
+          updateSlotPrimaryDish({
+            slotId: slot.id,
+            dishId: primaryItem.dish_id,
+          }),
+        );
+      }
+    }
+
+    await trace.step("recordShoppingListSourceChange", () =>
+      recordShoppingListSourceChange(mealPlan.id),
+    );
+
     return {
-      slotIsEmpty: true,
+      slotIsEmpty: remainingItems.length === 0,
     };
-  }
-
-  const slotItem = persistedItems.find((item) => item.id === args.slotItemId);
-
-  if (!slotItem) {
-    throw new WeeklyMenuMutationError("slot_item_not_found");
-  }
-
-  const remainingItems = sortSlotItemRows(
-    persistedItems.filter((item) => item.id !== args.slotItemId),
-  );
-
-  const { error: deleteItemError } = await supabase
-    .from("meal_plan_slot_items")
-    .delete()
-    .eq("id", args.slotItemId)
-    .eq("slot_id", slot.id);
-
-  if (deleteItemError) {
-    throw deleteItemError;
-  }
-
-  if (remainingItems.length === 0) {
-    const { error: deleteSlotError } = await supabase
-      .from("meal_plan_slots")
-      .delete()
-      .eq("id", slot.id);
-
-    if (deleteSlotError) {
-      throw deleteSlotError;
-    }
-  } else {
-    const primaryItem = remainingItems[0];
-
-    if (primaryItem && primaryItem.dish_id !== slot.dishId) {
-      await updateSlotPrimaryDish({
-        slotId: slot.id,
-        dishId: primaryItem.dish_id,
-      });
+  } catch (error) {
+    traceError = error;
+    throw error;
+  } finally {
+    if (traceError) {
+      trace.failure(traceError, traceDetails);
+    } else {
+      trace.success(traceDetails);
     }
   }
-
-  await recordShoppingListSourceChange(mealPlan.id);
-
-  return {
-    slotIsEmpty: remainingItems.length === 0,
-  };
 }
 
 export async function copyCurrentWeekSlotItem(args: {
@@ -918,110 +1135,158 @@ export async function copyCurrentWeekSlotItem(args: {
   assertDayIndex(args.targetDayIndex);
   const sourceMealType = assertMealType(args.sourceMealType);
   const targetMealType = assertMealType(args.targetMealType);
-
-  if (!args.slotItemId) {
-    throw new Error("Missing slot item id for reuse");
-  }
-
-  const { familyId, mealPlan } = await fetchCurrentWeekMealPlan();
-
-  if (!mealPlan) {
-    throw new WeeklyMenuMutationError("slot_not_found");
-  }
-
-  const sourceSlot = await fetchCurrentWeekSlotRow({
-    mealPlanId: mealPlan.id,
-    dayIndex: args.sourceDayIndex,
-    mealType: sourceMealType,
+  const trace = createWeeklyMenuMutationTrace("copyCurrentWeekSlotItem", {
+    sourceDayIndex: args.sourceDayIndex,
+    sourceMealType,
+    targetDayIndex: args.targetDayIndex,
+    targetMealType,
+    slotItemId: args.slotItemId,
   });
+  let traceError: unknown;
+  const traceDetails: Record<string, unknown> = {};
 
-  if (!sourceSlot) {
-    throw new WeeklyMenuMutationError("slot_not_found");
-  }
+  try {
+    if (!args.slotItemId) {
+      throw new Error("Missing slot item id for reuse");
+    }
 
-  const sourceItems = await ensurePersistedSlotItemsForSlot({
-    familyId,
-    slot: sourceSlot,
-  });
+    const { familyId, mealPlan } = await trace.step("fetchCurrentWeekMealPlan", () =>
+      fetchCurrentWeekMealPlan(),
+    );
 
-  if (!sourceItems) {
-    throw new Error("Slot item storage is not available yet.");
-  }
+    if (!mealPlan) {
+      throw new WeeklyMenuMutationError("slot_not_found");
+    }
 
-  const sourceItem = sourceItems.find((item) => item.id === args.slotItemId);
+    const sourceSlot = await trace.step("fetchSourceSlot", () =>
+      fetchCurrentWeekSlotRow({
+        mealPlanId: mealPlan.id,
+        dayIndex: args.sourceDayIndex,
+        mealType: sourceMealType,
+      }),
+    );
 
-  if (!sourceItem) {
-    throw new WeeklyMenuMutationError("slot_item_not_found");
-  }
+    if (!sourceSlot) {
+      throw new WeeklyMenuMutationError("slot_not_found");
+    }
 
-  await assertActiveDishAvailable(sourceItem.dish_id);
+    const sourceItems = await trace.step("ensureSourcePersistedSlotItems", () =>
+      ensurePersistedSlotItemsForSlot({
+        familyId,
+        slot: sourceSlot,
+      }),
+    );
 
-  const targetSlot = await fetchCurrentWeekSlotRow({
-    mealPlanId: mealPlan.id,
-    dayIndex: args.targetDayIndex,
-    mealType: targetMealType,
-  });
+    if (!sourceItems) {
+      throw new Error("Slot item storage is not available yet.");
+    }
 
-  if (!targetSlot) {
-    const createdSlot = await createCurrentWeekSlotRow({
-      familyId,
-      mealPlanId: mealPlan.id,
-      dayIndex: args.targetDayIndex,
-      mealType: targetMealType,
-      dishId: sourceItem.dish_id,
-    });
+    const sourceItem = sourceItems.find((item) => item.id === args.slotItemId);
 
-    await insertSlotItems({
-      familyId,
-      slotId: createdSlot.id,
-      dishIds: [sourceItem.dish_id],
-    });
+    if (!sourceItem) {
+      throw new WeeklyMenuMutationError("slot_item_not_found");
+    }
 
-    await recordShoppingListSourceChange(mealPlan.id);
-    return;
-  }
+    traceDetails.dishId = sourceItem.dish_id;
+    await trace.step("assertActiveDishAvailable", () =>
+      assertActiveDishAvailable(sourceItem.dish_id),
+    );
 
-  const targetItems = await ensurePersistedSlotItemsForSlot({
-    familyId,
-    slot: targetSlot,
-  });
+    const targetSlot = await trace.step("fetchTargetSlot", () =>
+      fetchCurrentWeekSlotRow({
+        mealPlanId: mealPlan.id,
+        dayIndex: args.targetDayIndex,
+        mealType: targetMealType,
+      }),
+    );
 
-  if (!targetItems) {
-    throw new Error("Slot item storage is not available yet.");
-  }
+    if (!targetSlot) {
+      traceDetails.targetSlotCreated = true;
+      const createdSlot = await trace.step("createTargetSlot", () =>
+        createCurrentWeekSlotRow({
+          familyId,
+          mealPlanId: mealPlan.id,
+          dayIndex: args.targetDayIndex,
+          mealType: targetMealType,
+          dishId: sourceItem.dish_id,
+        }),
+      );
 
-  if (targetItems.some((item) => item.dish_id === sourceItem.dish_id)) {
-    throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
-  }
+      await trace.step("insertSlotItems", () =>
+        insertSlotItems({
+          familyId,
+          slotId: createdSlot.id,
+          dishIds: [sourceItem.dish_id],
+        }),
+      );
 
-  const nextSortOrder =
-    targetItems.length === 0
-      ? 0
-      : Math.max(...targetItems.map((item) => item.sort_order)) + 1;
-  const supabase = getSupabaseServerClient();
-  const { error } = await supabase.from("meal_plan_slot_items").insert({
-    family_id: familyId,
-    slot_id: targetSlot.id,
-    dish_id: sourceItem.dish_id,
-    sort_order: nextSortOrder,
-  });
+      await trace.step("recordShoppingListSourceChange", () =>
+        recordShoppingListSourceChange(mealPlan.id),
+      );
+      return;
+    }
 
-  if (error) {
-    if (error.code === "23505") {
+    const targetItems = await trace.step("ensureTargetPersistedSlotItems", () =>
+      ensurePersistedSlotItemsForSlot({
+        familyId,
+        slot: targetSlot,
+      }),
+    );
+
+    if (!targetItems) {
+      throw new Error("Slot item storage is not available yet.");
+    }
+
+    if (targetItems.some((item) => item.dish_id === sourceItem.dish_id)) {
       throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
     }
 
+    const nextSortOrder =
+      targetItems.length === 0
+        ? 0
+        : Math.max(...targetItems.map((item) => item.sort_order)) + 1;
+    traceDetails.nextSortOrder = nextSortOrder;
+
+    const supabase = getSupabaseServerClient();
+    const { error } = await trace.step("insertCopiedSlotItem", () =>
+      supabase.from("meal_plan_slot_items").insert({
+        family_id: familyId,
+        slot_id: targetSlot.id,
+        dish_id: sourceItem.dish_id,
+        sort_order: nextSortOrder,
+      }),
+    );
+
+    if (error) {
+      if (error.code === "23505") {
+        throw new WeeklyMenuMutationError("duplicate_dish_in_slot");
+      }
+
+      throw error;
+    }
+
+    if (nextSortOrder === 0) {
+      await trace.step("updateSlotPrimaryDish", () =>
+        updateSlotPrimaryDish({
+          slotId: targetSlot.id,
+          dishId: sourceItem.dish_id,
+        }),
+      );
+    }
+
+    await trace.step("recordShoppingListSourceChange", () =>
+      recordShoppingListSourceChange(mealPlan.id),
+    );
+  } catch (error) {
+    traceError = error;
     throw error;
+  } finally {
+    if (traceError) {
+      trace.failure(traceError, traceDetails);
+    } else {
+      trace.success(traceDetails);
+    }
   }
-
-  if (nextSortOrder === 0) {
-    await updateSlotPrimaryDish({
-      slotId: targetSlot.id,
-      dishId: sourceItem.dish_id,
-    });
-  }
-
-  await recordShoppingListSourceChange(mealPlan.id);
 }
 
 export async function copyCurrentWeekSlot(args: {
@@ -1034,85 +1299,131 @@ export async function copyCurrentWeekSlot(args: {
   assertDayIndex(args.targetDayIndex);
   const sourceMealType = assertMealType(args.sourceMealType);
   const targetMealType = assertMealType(args.targetMealType);
-
-  const { familyId, mealPlan } = await fetchCurrentWeekMealPlan();
-
-  if (!mealPlan) {
-    throw new WeeklyMenuMutationError("slot_not_found");
-  }
-
-  const sourceSlot = await fetchCurrentWeekSlotRow({
-    mealPlanId: mealPlan.id,
-    dayIndex: args.sourceDayIndex,
-    mealType: sourceMealType,
+  const trace = createWeeklyMenuMutationTrace("copyCurrentWeekSlot", {
+    sourceDayIndex: args.sourceDayIndex,
+    sourceMealType,
+    targetDayIndex: args.targetDayIndex,
+    targetMealType,
   });
+  let traceError: unknown;
+  const traceDetails: Record<string, unknown> = {};
 
-  if (!sourceSlot) {
-    throw new WeeklyMenuMutationError("slot_not_found");
+  try {
+    const { familyId, mealPlan } = await trace.step("fetchCurrentWeekMealPlan", () =>
+      fetchCurrentWeekMealPlan(),
+    );
+
+    if (!mealPlan) {
+      throw new WeeklyMenuMutationError("slot_not_found");
+    }
+
+    const sourceSlot = await trace.step("fetchSourceSlot", () =>
+      fetchCurrentWeekSlotRow({
+        mealPlanId: mealPlan.id,
+        dayIndex: args.sourceDayIndex,
+        mealType: sourceMealType,
+      }),
+    );
+
+    if (!sourceSlot) {
+      throw new WeeklyMenuMutationError("slot_not_found");
+    }
+
+    const sourceItems = await trace.step("ensureSourcePersistedSlotItems", () =>
+      ensurePersistedSlotItemsForSlot({
+        familyId,
+        slot: sourceSlot,
+      }),
+    );
+
+    if (!sourceItems || sourceItems.length === 0) {
+      throw new WeeklyMenuMutationError("slot_not_found");
+    }
+
+    const orderedSourceItems = sortSlotItemRows(sourceItems);
+    const sourceDishIds = orderedSourceItems.map((item) => item.dish_id);
+    traceDetails.sourceDishCount = sourceDishIds.length;
+
+    await trace.step("assertActiveDishesAvailable", () =>
+      assertActiveDishesAvailable(sourceDishIds),
+    );
+
+    const targetSlot = await trace.step("fetchTargetSlot", () =>
+      fetchCurrentWeekSlotRow({
+        mealPlanId: mealPlan.id,
+        dayIndex: args.targetDayIndex,
+        mealType: targetMealType,
+      }),
+    );
+
+    if (!targetSlot) {
+      traceDetails.targetSlotCreated = true;
+      const createdSlot = await trace.step("createTargetSlot", () =>
+        createCurrentWeekSlotRow({
+          familyId,
+          mealPlanId: mealPlan.id,
+          dayIndex: args.targetDayIndex,
+          mealType: targetMealType,
+          dishId: sourceDishIds[0],
+        }),
+      );
+
+      await trace.step("insertSlotItems", () =>
+        insertSlotItems({
+          familyId,
+          slotId: createdSlot.id,
+          dishIds: sourceDishIds,
+        }),
+      );
+
+      await trace.step("recordShoppingListSourceChange", () =>
+        recordShoppingListSourceChange(mealPlan.id),
+      );
+      return;
+    }
+
+    const targetItems = await trace.step("ensureTargetPersistedSlotItems", () =>
+      ensurePersistedSlotItemsForSlot({
+        familyId,
+        slot: targetSlot,
+      }),
+    );
+
+    if (!targetItems) {
+      throw new Error("Slot item storage is not available yet.");
+    }
+
+    if (targetItems.length > 0) {
+      throw new WeeklyMenuMutationError("slot_not_empty");
+    }
+
+    await trace.step("insertSlotItems", () =>
+      insertSlotItems({
+        familyId,
+        slotId: targetSlot.id,
+        dishIds: sourceDishIds,
+      }),
+    );
+    await trace.step("updateSlotPrimaryDish", () =>
+      updateSlotPrimaryDish({
+        slotId: targetSlot.id,
+        dishId: sourceDishIds[0],
+      }),
+    );
+
+    await trace.step("recordShoppingListSourceChange", () =>
+      recordShoppingListSourceChange(mealPlan.id),
+    );
+  } catch (error) {
+    traceError = error;
+    throw error;
+  } finally {
+    if (traceError) {
+      trace.failure(traceError, traceDetails);
+    } else {
+      trace.success(traceDetails);
+    }
   }
-
-  const sourceItems = await ensurePersistedSlotItemsForSlot({
-    familyId,
-    slot: sourceSlot,
-  });
-
-  if (!sourceItems || sourceItems.length === 0) {
-    throw new WeeklyMenuMutationError("slot_not_found");
-  }
-
-  const orderedSourceItems = sortSlotItemRows(sourceItems);
-  const sourceDishIds = orderedSourceItems.map((item) => item.dish_id);
-
-  await assertActiveDishesAvailable(sourceDishIds);
-
-  const targetSlot = await fetchCurrentWeekSlotRow({
-    mealPlanId: mealPlan.id,
-    dayIndex: args.targetDayIndex,
-    mealType: targetMealType,
-  });
-
-  if (!targetSlot) {
-    const createdSlot = await createCurrentWeekSlotRow({
-      familyId,
-      mealPlanId: mealPlan.id,
-      dayIndex: args.targetDayIndex,
-      mealType: targetMealType,
-      dishId: sourceDishIds[0],
-    });
-
-    await insertSlotItems({
-      familyId,
-      slotId: createdSlot.id,
-      dishIds: sourceDishIds,
-    });
-
-    await recordShoppingListSourceChange(mealPlan.id);
-    return;
-  }
-
-  const targetItems = await ensurePersistedSlotItemsForSlot({
-    familyId,
-    slot: targetSlot,
-  });
-
-  if (!targetItems) {
-    throw new Error("Slot item storage is not available yet.");
-  }
-
-  if (targetItems.length > 0) {
-    throw new WeeklyMenuMutationError("slot_not_empty");
-  }
-  await insertSlotItems({
-    familyId,
-    slotId: targetSlot.id,
-    dishIds: sourceDishIds,
-  });
-  await updateSlotPrimaryDish({
-    slotId: targetSlot.id,
-    dishId: sourceDishIds[0],
-  });
-
-  await recordShoppingListSourceChange(mealPlan.id);
 }
 
 export async function assignDishToCurrentWeekSlot({

@@ -274,6 +274,12 @@ type ShoppingListClaimResult =
       claimTargetVersion: bigint;
     };
 
+type MealPlanSourceChangeRpcRow = {
+  shopping_list_id: string;
+  source_version: string | number | bigint;
+  freshness_state: ShoppingListFreshnessState;
+};
+
 function parseQuantity(value: number | string | null | undefined) {
   const numericValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numericValue) ? numericValue : 0;
@@ -490,21 +496,6 @@ async function fetchShoppingListAuthorityContext(shoppingListId: string) {
       mealPlanSourceAuthority,
     ),
   };
-}
-
-async function bumpMealPlanSourceVersion(mealPlanId: string) {
-  const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("bump_meal_plan_source_version", {
-    target_meal_plan_id: mealPlanId,
-  });
-
-  if (error) {
-    throw error;
-  }
-
-  return getAuthoritativeMealPlanSourceVersion({
-    source_version: data as string | number | bigint,
-  });
 }
 
 async function fetchShoppingListByMealPlanId(mealPlanId: string) {
@@ -1445,12 +1436,6 @@ async function advanceShoppingListControlStateAfterSuccessfulSync(shoppingListId
   }
 }
 
-function getPendingFreshnessStateForSourceChange(shoppingList: ShoppingListControlPlaneRow) {
-  return hasPublishedShoppingListBaseline(shoppingList)
-    ? "stale_pending"
-    : "no_projection";
-}
-
 async function runLegacyCompatibilityShoppingListRecompute(args: {
   shoppingListId: string;
   mealPlanId: string;
@@ -1636,28 +1621,29 @@ export function scheduleWeeklyMenuShoppingListControlPass(mealPlanId: string) {
 
 export async function markShoppingListSourceChangedByMealPlanId(mealPlanId: string) {
   const supabase = getSupabaseServerClient();
-  const shoppingList = await ensureShoppingListByMealPlanId(mealPlanId);
-  await bumpMealPlanSourceVersion(mealPlanId);
-  const now = new Date().toISOString();
-
-  const { error } = await supabase
-    .from("shopping_lists")
-    .update({
-      last_source_change_at: now,
-      needs_resync: true,
-      freshness_state: getPendingFreshnessStateForSourceChange(shoppingList),
-      recompute_requested_at: now,
-      claim_token: null,
-      claim_target_version: null,
-      claim_expires_at: null,
-    })
-    .eq("id", shoppingList.id);
+  const { data, error } = await supabase.rpc("record_meal_plan_source_change", {
+    target_meal_plan_id: mealPlanId,
+  });
 
   if (error) {
     throw error;
   }
 
-  return shoppingList.id;
+  const sourceChangeRow = ((data ?? []) as MealPlanSourceChangeRpcRow[])[0];
+
+  if (!sourceChangeRow?.shopping_list_id) {
+    throw new Error(
+      `Meal plan ${mealPlanId} source change did not return a shopping list id.`,
+    );
+  }
+
+  if (!isShoppingListFreshnessState(sourceChangeRow.freshness_state)) {
+    throw new Error(
+      `Invalid shopping list freshness state from source-change RPC: ${sourceChangeRow.freshness_state}`,
+    );
+  }
+
+  return sourceChangeRow.shopping_list_id;
 }
 
 export async function markCurrentWeekShoppingListSourceChanged() {
@@ -2126,4 +2112,5 @@ export async function upsertShoppingListItemAdjustment(input: {
   await materializeVisibleAutoProjectionRows(visibleAutoMaterializationPlan);
   revalidatePath("/products");
 }
+
 
