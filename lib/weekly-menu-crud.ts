@@ -496,9 +496,31 @@ async function assertActiveDishAvailable(dishId: string) {
 
 async function assertActiveDishesAvailable(dishIds: string[]) {
   const uniqueDishIds = [...new Set(dishIds)];
+  if (uniqueDishIds.length === 0) {
+    return;
+  }
+
+  const supabase = getSupabaseServerClient();
+  const familyId = getCurrentFamilyId();
+  const { data: dishes, error: dishesError } = await supabase
+    .from("dishes")
+    .select("id")
+    .in("id", uniqueDishIds)
+    .eq("family_id", familyId)
+    .eq("is_archived", false);
+
+  if (dishesError) {
+    throw dishesError;
+  }
+
+  const availableDishIds = new Set(
+    ((dishes ?? []) as Array<Pick<DishNameRow, "id">>).map((dish) => dish.id),
+  );
 
   for (const dishId of uniqueDishIds) {
-    await assertActiveDishAvailable(dishId);
+    if (!availableDishIds.has(dishId)) {
+      throw new WeeklyMenuMutationError("dish_not_available");
+    }
   }
 }
 
