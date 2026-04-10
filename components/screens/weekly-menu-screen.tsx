@@ -78,6 +78,10 @@ type ReuseTargetDay = {
   targets: ReuseTargetOption[];
 };
 
+type PendingRemoveState = {
+  slotItemId: string;
+};
+
 const twoLineClampStyle = {
   display: "-webkit-box",
   WebkitBoxOrient: "vertical" as const,
@@ -1035,6 +1039,44 @@ function SlotFlowNotice({ message }: { message: string | null }) {
   );
 }
 
+function SlotRemoveConfirmation({
+  message,
+  onConfirm,
+  onCancel,
+  isPending,
+}: {
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  const t = useT();
+
+  return (
+    <div className="mt-3 rounded-[1.15rem] border border-blush/65 bg-blush/36 p-3">
+      <p className="text-sm leading-6 text-ink">{message}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={isPending}
+          className="inline-flex items-center justify-center rounded-full bg-clay px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+        >
+          {t("weeklyMenu.slotFlow.remove")}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={isPending}
+          className="inline-flex items-center justify-center rounded-full border border-clay/18 bg-white/88 px-4 py-2 text-sm font-semibold text-cocoa disabled:opacity-60"
+        >
+          {t("common.actions.cancel")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SlotOverviewPanel({
   day,
   slot,
@@ -1043,7 +1085,11 @@ function SlotOverviewPanel({
   onReplace,
   onReuseItem,
   onReuseSlot,
-  onRemove,
+  onRequestRemove,
+  onConfirmRemove,
+  onCancelRemove,
+  pendingRemoveSlotItemId,
+  removeConfirmationMessage,
   onClose,
   feedbackMessage,
   isPending,
@@ -1056,7 +1102,11 @@ function SlotOverviewPanel({
   onReplace: (slotItemId: string) => void;
   onReuseItem: (slotItemId: string) => void;
   onReuseSlot: () => void;
-  onRemove: (slotItemId: string) => void;
+  onRequestRemove: (slotItemId: string) => void;
+  onConfirmRemove: (slotItemId: string) => void;
+  onCancelRemove: () => void;
+  pendingRemoveSlotItemId?: string;
+  removeConfirmationMessage: string;
   onClose: () => void;
   feedbackMessage: string | null;
   isPending: boolean;
@@ -1094,6 +1144,7 @@ function SlotOverviewPanel({
               const categoryLabel = item.dishDetails
                 ? getDishCategoryLabel(item.dishDetails.category, locale)
                 : null;
+              const isRemoveConfirming = pendingRemoveSlotItemId === item.id;
 
               return (
                 <SurfaceCard key={item.id} className="bg-white/88">
@@ -1165,13 +1216,22 @@ function SlotOverviewPanel({
                       ) : null}
                       <button
                         type="button"
-                        onClick={() => onRemove(item.id)}
+                        onClick={() => onRequestRemove(item.id)}
                         disabled={isPending}
                         className={slotItemTrailingActionClassName}
                       >
                         {t("weeklyMenu.slotFlow.remove")}
                       </button>
                     </div>
+
+                    {isRemoveConfirming ? (
+                      <SlotRemoveConfirmation
+                        message={removeConfirmationMessage}
+                        onConfirm={() => onConfirmRemove(item.id)}
+                        onCancel={onCancelRemove}
+                        isPending={isPending}
+                      />
+                    ) : null}
                   </div>
                 </SurfaceCard>
               );
@@ -1222,7 +1282,11 @@ function SlotItemDetailsPanel({
   onBack,
   onReplace,
   onReuse,
-  onRemove,
+  onRequestRemove,
+  onConfirmRemove,
+  onCancelRemove,
+  isRemoveConfirming,
+  removeConfirmationMessage,
   onClose,
   isPending,
   locale,
@@ -1233,7 +1297,11 @@ function SlotItemDetailsPanel({
   onBack: () => void;
   onReplace: () => void;
   onReuse: () => void;
-  onRemove: () => void;
+  onRequestRemove: () => void;
+  onConfirmRemove: () => void;
+  onCancelRemove: () => void;
+  isRemoveConfirming: boolean;
+  removeConfirmationMessage: string;
   onClose: () => void;
   isPending: boolean;
   locale: AppLocale;
@@ -1348,6 +1416,15 @@ function SlotItemDetailsPanel({
             </p>
           ) : null}
 
+          {isRemoveConfirming ? (
+            <SlotRemoveConfirmation
+              message={removeConfirmationMessage}
+              onConfirm={onConfirmRemove}
+              onCancel={onCancelRemove}
+              isPending={isPending}
+            />
+          ) : null}
+
           <button
             type="button"
             onClick={onReplace}
@@ -1377,7 +1454,7 @@ function SlotItemDetailsPanel({
 
             <button
               type="button"
-              onClick={onRemove}
+              onClick={onRequestRemove}
               disabled={isPending}
               className={
                 slotItem.isArchivedDish
@@ -1808,6 +1885,7 @@ export function WeeklyMenuScreen({
     reuseMode?: ReuseMode;
   } | null>(null);
   const [slotFeedback, setSlotFeedback] = useState<string | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<PendingRemoveState | null>(null);
   const [activeDayIndex, setActiveDayIndex] = useState(() =>
     getInitialActiveDayIndex(menu.days),
   );
@@ -1821,12 +1899,24 @@ export function WeeklyMenuScreen({
   const selectedSlotItem = sheetState?.slotItemId
     ? selectedSlot?.items.find((item) => item.id === sheetState.slotItemId)
     : undefined;
+  const removeConfirmationMessage =
+    selectedDay && selectedSlot
+      ? t("weeklyMenu.slotFlow.removeConfirm", {
+          mealLabel: selectedSlot.mealLabel.toLowerCase(),
+          dayLabel: selectedDay.label,
+          dateLabel: selectedDay.dateLabel,
+        })
+      : "";
   const mealsAssignedText = activeDay
     ? t("weeklyMenu.day.mealsAssigned", {
         filled: activeDay.filledMeals,
         total: activeDay.slots.length,
       })
     : "";
+
+  useEffect(() => {
+    setPendingRemove(null);
+  }, [sheetState?.dayIndex, sheetState?.mealType, sheetState?.slotItemId, sheetState?.view]);
 
   useEffect(() => {
     if (!sheetState) {
@@ -1906,11 +1996,18 @@ export function WeeklyMenuScreen({
 
   function resetToOverview(day: WeeklyMenuDayView, slot: WeeklyMenuSlotView) {
     setSlotFeedback(null);
+    setPendingRemove(null);
     setSheetState({
       dayIndex: day.dayIndex,
       mealType: slot.mealType,
       view: "overview",
     });
+  }
+
+  function closeSheet() {
+    setSlotFeedback(null);
+    setPendingRemove(null);
+    setSheetState(null);
   }
 
   function runSlotMutation(
@@ -1930,6 +2027,27 @@ export function WeeklyMenuScreen({
 
       setSlotFeedback(getMutationErrorMessage(result.code));
     });
+  }
+
+  function confirmRemoveSlotItem(day: WeeklyMenuDayView, slot: WeeklyMenuSlotView, slotItemId: string) {
+    setPendingRemove(null);
+
+    runSlotMutation(
+      removeItemAction,
+      {
+        dayIndex: day.dayIndex,
+        mealType: slot.mealType,
+        slotItemId,
+      },
+      (result) => {
+        if (result.slotIsEmpty) {
+          closeSheet();
+          return;
+        }
+
+        resetToOverview(day, slot);
+      },
+    );
   }
 
   return (
@@ -2038,10 +2156,7 @@ export function WeeklyMenuScreen({
 
       {selectedDay && selectedSlot && sheetState ? (
         <SlotSheet
-          onClose={() => {
-            setSlotFeedback(null);
-            setSheetState(null);
-          }}
+          onClose={closeSheet}
           closeAriaLabel={t("weeklyMenu.sheet.closeAriaLabel")}
         >
           {sheetState.view === "overview" ? (
@@ -2090,41 +2205,17 @@ export function WeeklyMenuScreen({
                   reuseMode: "slot",
                 })
               }
-              onRemove={(slotItemId) => {
-                const shouldRemove = window.confirm(
-                  t("weeklyMenu.slotFlow.removeConfirm", {
-                    mealLabel: selectedSlot.mealLabel.toLowerCase(),
-                    dayLabel: selectedDay.label,
-                    dateLabel: selectedDay.dateLabel,
-                  }),
-                );
-
-                if (!shouldRemove) {
-                  return;
-                }
-
-                runSlotMutation(
-                  removeItemAction,
-                  {
-                    dayIndex: selectedDay.dayIndex,
-                    mealType: selectedSlot.mealType,
-                    slotItemId,
-                  },
-                  (result) => {
-                    if (result.slotIsEmpty) {
-                      setSlotFeedback(null);
-                      setSheetState(null);
-                      return;
-                    }
-
-                    resetToOverview(selectedDay, selectedSlot);
-                  },
-                );
-              }}
-              onClose={() => {
+              onRequestRemove={(slotItemId) => {
                 setSlotFeedback(null);
-                setSheetState(null);
+                setPendingRemove({ slotItemId });
               }}
+              onConfirmRemove={(slotItemId) =>
+                confirmRemoveSlotItem(selectedDay, selectedSlot, slotItemId)
+              }
+              onCancelRemove={() => setPendingRemove(null)}
+              pendingRemoveSlotItemId={pendingRemove?.slotItemId}
+              removeConfirmationMessage={removeConfirmationMessage}
+              onClose={closeSheet}
               feedbackMessage={slotFeedback}
               isPending={isPending}
               locale={locale}
@@ -2155,41 +2246,17 @@ export function WeeklyMenuScreen({
                   slotItemId: selectedSlotItem.id,
                 })
               }
-              onRemove={() => {
-                const shouldRemove = window.confirm(
-                  t("weeklyMenu.slotFlow.removeConfirm", {
-                    mealLabel: selectedSlot.mealLabel.toLowerCase(),
-                    dayLabel: selectedDay.label,
-                    dateLabel: selectedDay.dateLabel,
-                  }),
-                );
-
-                if (!shouldRemove) {
-                  return;
-                }
-
-                runSlotMutation(
-                  removeItemAction,
-                  {
-                    dayIndex: selectedDay.dayIndex,
-                    mealType: selectedSlot.mealType,
-                    slotItemId: selectedSlotItem.id,
-                  },
-                  (result) => {
-                    if (result.slotIsEmpty) {
-                      setSlotFeedback(null);
-                      setSheetState(null);
-                      return;
-                    }
-
-                    resetToOverview(selectedDay, selectedSlot);
-                  },
-                );
-              }}
-              onClose={() => {
+              onRequestRemove={() => {
                 setSlotFeedback(null);
-                setSheetState(null);
+                setPendingRemove({ slotItemId: selectedSlotItem.id });
               }}
+              onConfirmRemove={() =>
+                confirmRemoveSlotItem(selectedDay, selectedSlot, selectedSlotItem.id)
+              }
+              onCancelRemove={() => setPendingRemove(null)}
+              isRemoveConfirming={pendingRemove?.slotItemId === selectedSlotItem.id}
+              removeConfirmationMessage={removeConfirmationMessage}
+              onClose={closeSheet}
               isPending={isPending}
               locale={locale}
             />
@@ -2203,10 +2270,7 @@ export function WeeklyMenuScreen({
               slotItem={sheetState.reuseMode === "item" ? selectedSlotItem : undefined}
               mode={sheetState.reuseMode}
               onBack={() => resetToOverview(selectedDay, selectedSlot)}
-              onClose={() => {
-                setSlotFeedback(null);
-                setSheetState(null);
-              }}
+              onClose={closeSheet}
               onSelectTarget={({ dayIndex, mealType }) => {
                 if (sheetState.reuseMode === "item" && sheetState.slotItemId) {
                   runSlotMutation(
@@ -2252,10 +2316,7 @@ export function WeeklyMenuScreen({
                 sheetState.pickerMode === "replace" ? sheetState.slotItemId : undefined
               }
               onBack={() => resetToOverview(selectedDay, selectedSlot)}
-              onClose={() => {
-                setSlotFeedback(null);
-                setSheetState(null);
-              }}
+              onClose={closeSheet}
               onSelectDish={(dishId) => {
                 if (sheetState.pickerMode === "replace" && sheetState.slotItemId) {
                   runSlotMutation(
